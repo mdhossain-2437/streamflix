@@ -494,29 +494,52 @@
 }
 /* === Awwwards-grade interaction layer === */
 
-/* Hide the native cursor on fine-pointer devices since we render our own. */
+::selection {
+  background: hsl(var(--primary) / 0.85);
+  color: white;
+}
+
+/* Hide the native cursor only AFTER the JS-driven custom cursor mounts.
+   This way users always have a working pointer if JS fails, is still
+   loading, or if they're on a touch / coarse-pointer device. The class
+   is toggled by Cursor.tsx after the component has mounted and only on
+   fine-pointer devices without prefers-reduced-motion. */
 @media (pointer: fine) {
-  html, body, * { cursor: none; }
-  ::selection {
-    background: hsl(var(--primary) / 0.85);
-    color: white;
+  html.cursor-active,
+  html.cursor-active body,
+  html.cursor-active *:not(input):not(textarea):not([contenteditable="true"]) {
+    cursor: none;
   }
+}
+
+/* Drop shadow keeps the cursor visible against any background — replaces
+   the previous mix-blend-difference approach which disappeared on busy
+   imagery and reds. */
+.custom-cursor-dot {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.custom-cursor-ring {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 2px 12px rgba(0, 0, 0, 0.5);
 }
 
 /* Custom cursor states */
 .cursor-ring[data-state="hover"] {
-  width: 64px !important;
-  height: 64px !important;
-  margin-left: -16px;
-  margin-top: -16px;
-  border-color: rgba(255,255,255,0.9);
-  background-color: rgba(255,255,255,0.06);
+  width: 56px !important;
+  height: 56px !important;
+  margin-left: -12px;
+  margin-top: -12px;
+  border-color: rgba(255, 255, 255, 1);
+  background-color: rgba(255, 255, 255, 0.12);
 }
 .cursor-ring[data-state="play"] {
-  width: 88px !important;
-  height: 88px !important;
-  margin-left: -28px;
-  margin-top: -28px;
+  width: 80px !important;
+  height: 80px !important;
+  margin-left: -24px;
+  margin-top: -24px;
   background-color: hsl(var(--primary));
   border-color: hsl(var(--primary));
 }

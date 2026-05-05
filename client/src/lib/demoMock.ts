@@ -604,3 +604,11 @@ function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
 export function installDemoMock() {
   (window as any).fetch = mockFetch;
 }
+
+// Pre-seed the React Query cache with the mock user so useAuth() returns
+// authenticated on first render — eliminates the Landing-page flicker that
+// would otherwise force-load the heavy WebGL hero chunk on demo builds.
+import { queryClient } from "./queryClient";
+export function primeDemoQueryCache() {
+  queryClient.setQueryData(["/api/auth/user"], MOCK_USER);
+}
