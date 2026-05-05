@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -10,6 +9,7 @@ import {
   Film,
   Tv,
   SlidersHorizontal,
+  User as UserIcon,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { ContentCard, ContentCardSkeleton } from "@/components/ContentCard";
@@ -17,7 +17,8 @@ import { Footer } from "@/components/Footer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useTmdbSearch, useTmdbTrending } from "@/lib/tmdb";
+import { useSearch as useApiSearch, useTrending } from "@/lib/api";
+import type { CatalogItem, PersonHit } from "@/lib/api";
 import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { Content } from "@shared/schema";
 
@@ -51,7 +52,7 @@ function clearRecentSearches() {
   localStorage.removeItem(RECENT_SEARCHES_KEY);
 }
 
-type ContentFilter = "all" | "movie" | "series";
+type ContentFilter = "all" | "movie" | "series" | "person";
 
 export default function Search() {
   const searchString = useSearch();
@@ -92,41 +93,29 @@ export default function Search() {
     }
   }, [debouncedQuery]);
 
-  // Local DB search
-  const { data: localResults = [], isLoading: localLoading } = useQuery<
-    Content[]
-  >({
-    queryKey: [
-      "/api/content/search",
-      { q: debouncedQuery, type: filter !== "all" ? filter : undefined },
-    ],
-    enabled: debouncedQuery.length >= 2,
-  });
+  const apiKind = filter === "all" ? "multi" : filter === "person" ? "person" : filter === "series" ? "tv" : "movie";
+  const { data: searchData, isLoading: searchLoading } = useApiSearch(
+    debouncedQuery,
+    apiKind,
+  );
 
-  // TMDB search
-  const { data: tmdbResults, isLoading: tmdbLoading } =
-    useTmdbSearch(debouncedQuery);
-
-  // Merge results: local first, then TMDB (deduped)
-  const mergedResults: Content[] = (() => {
-    const localIds = new Set(localResults.map((c) => c.id));
-    const tmdbMapped = (tmdbResults || [])
-      .map(tmdbToContent)
-      .filter((c) => !localIds.has(c.id));
-    let combined = [...localResults, ...tmdbMapped];
-    if (filter !== "all") {
-      combined = combined.filter((c) => c.type === filter);
-    }
-    return combined;
-  })();
+  const allHits = searchData?.results || [];
+  const peopleHits: PersonHit[] = allHits.filter(
+    (h): h is PersonHit => (h as PersonHit).type === "person",
+  );
+  const titleHits: CatalogItem[] = allHits.filter(
+    (h): h is CatalogItem =>
+      (h as CatalogItem).type === "movie" || (h as CatalogItem).type === "series",
+  );
+  const titleResults: Content[] = titleHits.map(tmdbToContent);
 
   const isSearching = debouncedQuery.length >= 2;
-  const isLoading = isSearching && (localLoading || tmdbLoading);
-  const hasResults = mergedResults.length > 0;
+  const isLoading = isSearching && searchLoading;
+  const hasResults = titleResults.length > 0 || peopleHits.length > 0;
+  const mergedResults = titleResults; // legacy alias for the JSX below
 
-  // Trending for empty state
-  const { data: tmdbTrending } = useTmdbTrending("week", "all");
-  const trendingContent: Content[] = (tmdbTrending || [])
+  const { data: trendingData } = useTrending({ window: "week", kind: "all" });
+  const trendingContent: Content[] = (trendingData?.results || [])
     .slice(0, 12)
     .map(tmdbToContent);
 
@@ -176,6 +165,7 @@ export default function Search() {
     { value: "all", label: "All", icon: SlidersHorizontal },
     { value: "movie", label: "Movies", icon: Film },
     { value: "series", label: "TV Shows", icon: Tv },
+    { value: "person", label: "People", icon: UserIcon },
   ];
 
   return (
@@ -297,20 +287,61 @@ export default function Search() {
                     ))}
                   </div>
                 ) : hasResults ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
-                    {mergedResults.map((item, i) => (
-                      <motion.div
-                        key={item.id}
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{
-                          duration: 0.45,
-                          delay: Math.min(i * 0.02, 0.5),
-                        }}
-                      >
-                        <ContentCard content={item} />
-                      </motion.div>
-                    ))}
+                  <div className="space-y-10">
+                    {peopleHits.length > 0 && (
+                      <section className="space-y-4">
+                        <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground/90">
+                          People
+                        </h2>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+                          {peopleHits.slice(0, 16).map((p) => (
+                            <button
+                              key={p.id}
+                              className="group text-center"
+                              onClick={() => setLocation(`/person/${p.tmdbId}`)}
+                              data-testid={`person-${p.tmdbId}`}
+                            >
+                              <div className="aspect-[2/3] rounded-md overflow-hidden bg-muted ring-1 ring-white/5 group-hover:ring-primary/50 transition-all">
+                                {p.imageUrl ? (
+                                  <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                                ) : (
+                                  <div className="w-full h-full grid place-items-center">
+                                    <UserIcon className="w-8 h-8 text-muted-foreground" />
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs mt-2 line-clamp-2 group-hover:text-primary transition-colors">
+                                {p.name}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    {mergedResults.length > 0 && (
+                      <section className="space-y-4">
+                        {peopleHits.length > 0 && (
+                          <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground/90">
+                            Titles
+                          </h2>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
+                          {mergedResults.map((item, i) => (
+                            <motion.div
+                              key={item.id}
+                              initial={{ opacity: 0, y: 12 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{
+                                duration: 0.45,
+                                delay: Math.min(i * 0.02, 0.5),
+                              }}
+                            >
+                              <ContentCard content={item} />
+                            </motion.div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-20 space-y-4">

@@ -9,7 +9,13 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { useTmdbTrending, useTmdbPopular, useTmdbTopRated } from "@/lib/tmdb";
+import {
+  useTrending,
+  usePopular,
+  useTopRated,
+  useUpcoming,
+  useOnTheAir,
+} from "@/lib/api";
 import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { Content, ViewingProgress } from "@shared/schema";
 
@@ -31,55 +37,36 @@ export default function Home() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: featuredContent } = useQuery<Content>({
-    queryKey: ["/api/content/featured"],
-  });
-
-  const { data: localTrending = [], isLoading: localTrendingLoading } = useQuery<Content[]>({
-    queryKey: ["/api/content/trending"],
-  });
-
-  const { data: continueWatching = [] } = useQuery<
-    { content: Content; progress: ViewingProgress }[]
-  >({
+  const { data: continueWatchingRaw = [] } = useQuery<ViewingProgress[]>({
     queryKey: ["/api/continue-watching"],
   });
 
-  const { data: localMovies = [], isLoading: localMoviesLoading } = useQuery<Content[]>({
-    queryKey: ["/api/content", { type: "movie", limit: 20 }],
-  });
+  // Fetch all rows in parallel from the unified API.
+  const { data: trendingData, isLoading: trendingLoading } = useTrending({ window: "week", kind: "all" });
+  const { data: popularMoviesData, isLoading: moviesLoading } = usePopular({ kind: "movie" });
+  const { data: popularSeriesData, isLoading: seriesLoading } = usePopular({ kind: "tv" });
+  const { data: topMoviesData } = useTopRated({ kind: "movie" });
+  const { data: topSeriesData } = useTopRated({ kind: "tv" });
+  const { data: upcomingData } = useUpcoming();
+  const { data: onTheAirData } = useOnTheAir();
 
-  const { data: localSeries = [], isLoading: localSeriesLoading } = useQuery<Content[]>({
-    queryKey: ["/api/content", { type: "series", limit: 20 }],
-  });
+  const trending: Content[] = (trendingData?.results || []).slice(0, 10).map(tmdbToContent);
+  const movies: Content[] = (popularMoviesData?.results || []).slice(0, 20).map(tmdbToContent);
+  const series: Content[] = (popularSeriesData?.results || []).slice(0, 20).map(tmdbToContent);
+  const topMovies: Content[] = (topMoviesData?.results || []).slice(0, 20).map(tmdbToContent);
+  const topSeries: Content[] = (topSeriesData?.results || []).slice(0, 20).map(tmdbToContent);
+  const upcoming: Content[] = (upcomingData?.results || []).slice(0, 20).map(tmdbToContent);
+  const onTheAir: Content[] = (onTheAirData?.results || []).slice(0, 20).map(tmdbToContent);
 
-  // TMDB hooks return null when the API key isn't configured — fall back to
-  // the existing seeded content in that case.
-  const { data: tmdbTrending } = useTmdbTrending("week", "all");
-  const { data: tmdbMovies } = useTmdbPopular("movie");
-  const { data: tmdbSeries } = useTmdbPopular("tv");
-  const { data: tmdbTopMovies } = useTmdbTopRated("movie");
+  const featuredContent: Content | undefined = trending[0];
 
-  const trending: Content[] =
-    tmdbTrending && tmdbTrending.length > 0
-      ? tmdbTrending.slice(0, 10).map(tmdbToContent)
-      : localTrending;
-  const movies: Content[] =
-    tmdbMovies && tmdbMovies.length > 0
-      ? tmdbMovies.slice(0, 18).map(tmdbToContent)
-      : localMovies;
-  const series: Content[] =
-    tmdbSeries && tmdbSeries.length > 0
-      ? tmdbSeries.slice(0, 18).map(tmdbToContent)
-      : localSeries;
-  const topMovies: Content[] =
-    tmdbTopMovies && tmdbTopMovies.length > 0
-      ? tmdbTopMovies.slice(0, 18).map(tmdbToContent)
-      : [];
-
-  const trendingLoading = localTrendingLoading && !tmdbTrending;
-  const moviesLoading = localMoviesLoading && !tmdbMovies;
-  const seriesLoading = localSeriesLoading && !tmdbSeries;
+  // Resolve viewing-progress records into Content cards using the trending
+  // pool we already have in cache. (Detail fetches happen on click.)
+  const allKnown: Content[] = [...trending, ...movies, ...series, ...topMovies, ...topSeries, ...upcoming, ...onTheAir];
+  const knownById = new Map(allKnown.map((c) => [c.id, c]));
+  const continueWatching: { content: Content; progress: ViewingProgress }[] = continueWatchingRaw
+    .filter((p) => knownById.has(p.contentId))
+    .map((p) => ({ content: knownById.get(p.contentId)!, progress: p }));
 
   const continueWatchingProgress = continueWatching.reduce(
     (acc, item) => {
@@ -279,6 +266,33 @@ export default function Home() {
             subtitle="The all-time best, scored by audiences"
             contents={topMovies}
             seeAllLink="/movies"
+          />
+        )}
+
+        {topSeries.length > 0 && (
+          <ContentRow
+            title="Critically Acclaimed Series"
+            subtitle="The shows that became cultural moments"
+            contents={topSeries}
+            seeAllLink="/series"
+          />
+        )}
+
+        {upcoming.length > 0 && (
+          <ContentRow
+            title="Coming Soon"
+            subtitle="What’s about to drop in theaters"
+            contents={upcoming}
+            seeAllLink="/movies"
+          />
+        )}
+
+        {onTheAir.length > 0 && (
+          <ContentRow
+            title="On the Air"
+            subtitle="Live this week—new episodes arriving"
+            contents={onTheAir}
+            seeAllLink="/series"
           />
         )}
       </div>
