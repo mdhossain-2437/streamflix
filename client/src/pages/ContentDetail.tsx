@@ -118,15 +118,15 @@ export default function ContentDetail() {
       <Navbar />
 
       {/* HERO */}
-      <section className="relative noise">
+      <section className="relative noise overflow-hidden min-h-[640px]">
         {content.backdropUrl && (
           <div
-            className="absolute inset-x-0 top-0 h-[640px] bg-cover bg-center animate-kenburns"
+            className="absolute inset-0 bg-cover bg-center animate-kenburns"
             style={{ backgroundImage: `url(${content.backdropUrl})` }}
           />
         )}
-        <div className="absolute inset-x-0 top-0 h-[640px] bg-gradient-to-r from-background via-background/80 to-background/30" />
-        <div className="absolute inset-x-0 top-0 h-[640px] bg-gradient-to-b from-background/80 via-background/30 to-background" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-background/30" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/30 to-background" />
 
         <div className="relative z-10 pt-24 md:pt-28 pb-12 px-4 md:px-8 lg:px-16">
           <Link href="/">
@@ -273,11 +273,11 @@ export default function ContentDetail() {
       {/* TABS */}
       <div className="px-4 md:px-8 lg:px-16 pb-20">
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="bg-white/[0.04] border border-white/[0.06] p-1">
+          <TabsList className="bg-white/[0.05] border border-white/10 p-1 h-11 backdrop-blur-md">
             <TabsTrigger
               value="overview"
               data-testid="tab-overview"
-              className="data-[state=active]:bg-white/10 data-[state=active]:text-foreground"
+              className="text-sm px-5 h-9 text-foreground/70 hover:text-foreground data-[state=active]:bg-white/[0.12] data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             >
               Overview
             </TabsTrigger>
@@ -285,7 +285,7 @@ export default function ContentDetail() {
               <TabsTrigger
                 value="episodes"
                 data-testid="tab-episodes"
-                className="data-[state=active]:bg-white/10 data-[state=active]:text-foreground"
+                className="text-sm px-5 h-9 text-foreground/70 hover:text-foreground data-[state=active]:bg-white/[0.12] data-[state=active]:text-foreground data-[state=active]:shadow-sm"
               >
                 Episodes
               </TabsTrigger>
@@ -293,7 +293,7 @@ export default function ContentDetail() {
             <TabsTrigger
               value="similar"
               data-testid="tab-similar"
-              className="data-[state=active]:bg-white/10 data-[state=active]:text-foreground"
+              className="text-sm px-5 h-9 text-foreground/70 hover:text-foreground data-[state=active]:bg-white/[0.12] data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             >
               More Like This
             </TabsTrigger>

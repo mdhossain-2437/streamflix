@@ -72,7 +72,7 @@ export default function Landing() {
             className="absolute inset-0 bg-cover bg-center animate-kenburns"
             style={{
               backgroundImage:
-                "url('https://images.unsplash.com/photo-1574267432644-f610b91c88d1?w=2200&q=80')",
+                "url('https://picsum.photos/seed/streamflix-hero/2400/1350')",
             }}
           />
         </div>
@@ -286,7 +286,7 @@ export default function Landing() {
               className="absolute inset-0 bg-cover bg-center scale-[1.04]"
               style={{
                 backgroundImage:
-                  "url('https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1600&q=80')",
+                  "url('https://picsum.photos/seed/echoes-of-atlas/1600/1000')",
               }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />

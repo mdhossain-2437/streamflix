@@ -209,7 +209,7 @@ export default function Home() {
       </section>
 
       {/* ROWS */}
-      <div className="relative z-10 -mt-24 md:-mt-32 space-y-10 md:space-y-14 pb-16">
+      <div className="relative z-10 -mt-12 md:-mt-16 space-y-10 md:space-y-14 pb-16">
         {continueWatching.length > 0 && (
           <ContentRow
             title="Continue Watching"
