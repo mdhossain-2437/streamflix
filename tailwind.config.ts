@@ -94,6 +94,7 @@ export default {
       boxShadow: {
         glow: "0 0 0 1px rgba(229,9,20,0.35), 0 10px 40px -10px rgba(229,9,20,0.55)",
         "glow-sm": "0 8px 20px -8px rgba(229,9,20,0.55)",
+        "glow-lg": "0 0 0 1px rgba(229,9,20,0.45), 0 24px 80px -16px rgba(229,9,20,0.7)",
         cinematic: "0 30px 60px -20px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.06)",
         card: "0 12px 32px -12px rgba(0,0,0,0.85)",
       },
@@ -140,6 +141,27 @@ export default {
           "0%": { transform: "translateX(0)" },
           "100%": { transform: "translateX(-50%)" },
         },
+        "marquee-line": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(400%)" },
+        },
+        "spotlight-sweep": {
+          "0%": { transform: "translateX(-100%) skewX(-20deg)", opacity: "0" },
+          "30%": { opacity: "0.6" },
+          "100%": { transform: "translateX(220%) skewX(-20deg)", opacity: "0" },
+        },
+        "tilt-in": {
+          "0%": { opacity: "0", transform: "perspective(1200px) rotateX(8deg) translateY(40px)" },
+          "100%": { opacity: "1", transform: "perspective(1200px) rotateX(0) translateY(0)" },
+        },
+        "letter-reveal": {
+          "0%": { transform: "translateY(110%)" },
+          "100%": { transform: "translateY(0)" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-12px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -150,6 +172,11 @@ export default {
         "fade-up": "fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both",
         "scale-in": "scale-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both",
         marquee: "marquee 40s linear infinite",
+        "marquee-line": "marquee-line 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite",
+        "spotlight-sweep": "spotlight-sweep 3.6s ease-in-out infinite",
+        "tilt-in": "tilt-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "letter-reveal": "letter-reveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) both",
+        float: "float 6s cubic-bezier(0.42, 0, 0.58, 1) infinite",
       },
     },
   },
