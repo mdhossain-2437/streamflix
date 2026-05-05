@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Play,
@@ -26,7 +26,6 @@ import type { Content } from "@shared/schema";
 
 export default function Watch() {
   const [, params] = useRoute("/watch/:id");
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -158,13 +157,13 @@ export default function Watch() {
 
   return (
     <div
-      className="relative h-screen bg-black"
+      className="relative h-screen bg-black overflow-hidden"
       onMouseMove={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
     >
       <video
         ref={videoRef}
-        className="w-full h-full"
+        className="w-full h-full object-contain"
         src={content?.videoUrl || ""}
         poster={content?.backdropUrl || content?.thumbnailUrl || ""}
         onClick={togglePlay}
@@ -172,45 +171,51 @@ export default function Watch() {
       />
 
       <div
-        className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/80 transition-opacity duration-300 ${
+        className={`absolute inset-0 transition-opacity duration-300 ${
           showControls ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <div className="absolute top-0 left-0 right-0 p-6 flex items-center justify-between">
+        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/85 via-black/40 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+
+        <div className="absolute top-0 left-0 right-0 px-6 py-5 flex items-center justify-between">
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setLocation(-1)}
-            className="text-white hover:bg-white/20"
+            onClick={() => window.history.back()}
+            className="text-white hover:bg-white/15 rounded-full h-11 w-11"
             data-testid="button-back-player"
           >
             <ChevronLeft className="w-6 h-6" />
           </Button>
           {content && (
-            <div className="text-white">
-              <h2 className="text-xl font-semibold">{content.title}</h2>
+            <div className="text-white text-center">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-white/60">
+                Now playing
+              </p>
+              <h2 className="font-display text-2xl tracking-wide">{content.title}</h2>
             </div>
           )}
           <div className="w-10" />
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 p-6 space-y-4">
+        <div className="absolute bottom-0 left-0 right-0 px-6 pb-6 pt-3 space-y-3">
           <Slider
             value={[currentTime]}
-            max={duration}
+            max={duration || 1}
             step={1}
             onValueChange={handleSeek}
-            className="cursor-pointer"
+            className="cursor-pointer [&_[role=slider]]:bg-primary [&_[role=slider]]:shadow-glow-sm"
             data-testid="slider-progress"
           />
 
           <div className="flex items-center justify-between text-white">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={togglePlay}
-                className="text-white hover:bg-white/20"
+                className="text-white hover:bg-white/15 rounded-full h-12 w-12"
                 data-testid="button-play-pause"
               >
                 {isPlaying ? (
@@ -224,7 +229,7 @@ export default function Watch() {
                 variant="ghost"
                 size="icon"
                 onClick={skipForward}
-                className="text-white hover:bg-white/20"
+                className="text-white hover:bg-white/15 rounded-full h-11 w-11"
                 data-testid="button-skip"
               >
                 <SkipForward className="w-6 h-6" />
@@ -235,7 +240,7 @@ export default function Watch() {
                   variant="ghost"
                   size="icon"
                   onClick={toggleMute}
-                  className="text-white hover:bg-white/20"
+                  className="text-white hover:bg-white/15 rounded-full h-11 w-11"
                   data-testid="button-mute"
                 >
                   {isMuted ? (
@@ -254,7 +259,7 @@ export default function Watch() {
                 />
               </div>
 
-              <span className="text-sm" data-testid="text-time">
+              <span className="text-sm tabular-nums text-white/85" data-testid="text-time">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
             </div>
@@ -265,13 +270,13 @@ export default function Watch() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-white hover:bg-white/20"
+                    className="text-white hover:bg-white/15 rounded-full h-11 w-11"
                     data-testid="button-quality"
                   >
                     <Settings className="w-6 h-6" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="glass">
                   <DropdownMenuItem onClick={() => setQuality("1080p")}>
                     1080p {quality === "1080p" && "✓"}
                   </DropdownMenuItem>
@@ -291,7 +296,7 @@ export default function Watch() {
                 variant="ghost"
                 size="icon"
                 onClick={toggleFullscreen}
-                className="text-white hover:bg-white/20"
+                className="text-white hover:bg-white/15 rounded-full h-11 w-11"
                 data-testid="button-fullscreen"
               >
                 <Maximize className="w-6 h-6" />
