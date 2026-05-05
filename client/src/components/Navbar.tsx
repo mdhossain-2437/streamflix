@@ -13,13 +13,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 export function Navbar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -96,18 +98,42 @@ export function Navbar() {
                   transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                   className="flex items-center gap-1"
                 >
-                  <Input
-                    type="search"
-                    placeholder="Titles, people, genres"
-                    className="h-9 w-full bg-card/70 backdrop-blur-md border-white/10 focus-visible:ring-primary/50"
-                    autoFocus
-                    data-testid="input-search"
-                  />
+                  <form
+                    className="flex-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (searchQuery.trim()) {
+                        setLocation(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                        setSearchOpen(false);
+                        setSearchQuery("");
+                      }
+                    }}
+                  >
+                    <Input
+                      ref={searchInputRef}
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Titles, people, genres"
+                      className="h-9 w-full bg-card/70 backdrop-blur-md border-white/10 focus-visible:ring-primary/50"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setSearchOpen(false);
+                          setSearchQuery("");
+                        }
+                      }}
+                      data-testid="input-search"
+                    />
+                  </form>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9"
-                    onClick={() => setSearchOpen(false)}
+                    onClick={() => {
+                      setSearchOpen(false);
+                      setSearchQuery("");
+                    }}
                     data-testid="button-close-search"
                   >
                     <X className="w-4 h-4" />
@@ -124,7 +150,13 @@ export function Navbar() {
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9 hover:bg-white/5"
-                    onClick={() => setSearchOpen(true)}
+                    onClick={() => {
+                      if (location === "/search") {
+                        // Already on search page, just focus input there
+                        return;
+                      }
+                      setSearchOpen(true);
+                    }}
                     data-testid="button-open-search"
                   >
                     <Search className="w-5 h-5" />

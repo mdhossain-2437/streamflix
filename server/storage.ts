@@ -25,6 +25,7 @@ export interface IStorage {
 
   // Content operations
   getContent(id: string): Promise<Content | undefined>;
+  searchContent(query: string, params?: { type?: string; limit?: number }): Promise<Content[]>;
   getAllContent(params: {
     type?: string;
     genres?: string[];
@@ -79,6 +80,24 @@ export class DatabaseStorage implements IStorage {
   async getContent(id: string): Promise<Content | undefined> {
     const [item] = await db.select().from(content).where(eq(content.id, id));
     return item;
+  }
+
+  async searchContent(query: string, params?: { type?: string; limit?: number }): Promise<Content[]> {
+    const conditions = [
+      or(
+        ilike(content.title, `%${query}%`),
+        ilike(content.description, `%${query}%`),
+      ),
+    ];
+    if (params?.type) {
+      conditions.push(eq(content.type, params.type) as any);
+    }
+    const items = await db
+      .select()
+      .from(content)
+      .where(and(...conditions))
+      .limit(params?.limit || 30);
+    return items;
   }
 
   async getAllContent(params: {

@@ -67,6 +67,20 @@ export function useTmdbTopRated(kind: "movie" | "tv" = "movie") {
   });
 }
 
+export function useTmdbSearch(query: string) {
+  return useQuery<TmdbItem[] | null>({
+    queryKey: [`/api/tmdb/search?q=${encodeURIComponent(query)}`],
+    queryFn: () =>
+      query.trim()
+        ? jsonOrFallback<TmdbItem[]>(
+            `/api/tmdb/search?q=${encodeURIComponent(query)}`,
+          )
+        : Promise.resolve(null),
+    enabled: query.trim().length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useTmdbDiscover(opts: {
   kind?: "movie" | "tv";
   genre?: string;

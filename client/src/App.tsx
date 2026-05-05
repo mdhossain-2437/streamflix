@@ -16,6 +16,7 @@ const Movies = lazy(() => import("@/pages/Movies"));
 const Series = lazy(() => import("@/pages/Series"));
 const ContentDetail = lazy(() => import("@/pages/ContentDetail"));
 const Watch = lazy(() => import("@/pages/Watch"));
+const Search = lazy(() => import("@/pages/Search"));
 const Watchlist = lazy(() => import("@/pages/Watchlist"));
 const Profile = lazy(() => import("@/pages/Profile"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -32,6 +33,7 @@ function Router() {
           <Route path="/" component={Home} />
           <Route path="/movies" component={Movies} />
           <Route path="/series" component={Series} />
+          <Route path="/search" component={Search} />
           <Route path="/movie/:id" component={ContentDetail} />
           <Route path="/series/:id" component={ContentDetail} />
           <Route path="/watch/:id" component={Watch} />

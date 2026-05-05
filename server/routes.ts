@@ -50,6 +50,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/content/search", async (req, res) => {
+    try {
+      const q = (req.query.q as string) || "";
+      if (!q) return res.json([]);
+      const type = req.query.type as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 30;
+      const results = await storage.searchContent(q, { type, limit });
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching content:", error);
+      res.status(500).json({ message: "Failed to search content" });
+    }
+  });
+
   app.get("/api/content/similar/:id", async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 6;
