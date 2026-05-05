@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import Hls from "hls.js";
 import {
   Play,
   Pause,
@@ -35,12 +36,86 @@ export default function Watch() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
-  const [quality, setQuality] = useState("1080p");
+  const [quality, setQuality] = useState("auto");
+  const [availableLevels, setAvailableLevels] = useState<string[]>([]);
+  const hlsRef = useRef<Hls | null>(null);
 
   const { data: content } = useQuery<Content>({
     queryKey: [`/api/content/${params?.id}`],
     enabled: !!params?.id,
   });
+
+  // Sample HLS test streams used when content has no real videoUrl yet.
+  // These are Mux & Bitmovin public test streams — safe for demos.
+  const SAMPLE_SOURCES = [
+    "https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8",
+    "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+    "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+  ];
+
+  const resolvedSrc =
+    content?.videoUrl && content.videoUrl.length > 0
+      ? content.videoUrl
+      : SAMPLE_SOURCES[
+          Math.abs(
+            (params?.id || "")
+              .split("")
+              .reduce((acc, c) => acc + c.charCodeAt(0), 0),
+          ) % SAMPLE_SOURCES.length
+        ];
+
+  // Wire HLS.js when the source is an m3u8 playlist; fall back to native
+  // playback (Safari / iOS / iPadOS support HLS natively via MSE).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !resolvedSrc) return;
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const isHls = resolvedSrc.includes(".m3u8");
+
+    if (isHls && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 90,
+      });
+      hlsRef.current = hls;
+      hls.loadSource(resolvedSrc);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+        const heights = data.levels.map((l) => `${l.height}p`);
+        setAvailableLevels(["auto", ...heights]);
+      });
+    } else if (isHls && video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Native Safari HLS
+      video.src = resolvedSrc;
+    } else {
+      video.src = resolvedSrc;
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [resolvedSrc]);
+
+  // Switch quality level by name
+  useEffect(() => {
+    if (!hlsRef.current) return;
+    if (quality === "auto") {
+      hlsRef.current.currentLevel = -1;
+      return;
+    }
+    const target = parseInt(quality.replace("p", ""), 10);
+    const idx = hlsRef.current.levels.findIndex((l) => l.height === target);
+    if (idx >= 0) hlsRef.current.currentLevel = idx;
+  }, [quality]);
 
   const progressMutation = useMutation({
     mutationFn: async (progressData: { progressSeconds: number; durationSeconds: number }) => {
@@ -164,9 +239,10 @@ export default function Watch() {
       <video
         ref={videoRef}
         className="w-full h-full object-contain"
-        src={content?.videoUrl || ""}
         poster={content?.backdropUrl || content?.thumbnailUrl || ""}
         onClick={togglePlay}
+        playsInline
+        crossOrigin="anonymous"
         data-testid="video-player"
       />
 
@@ -277,18 +353,17 @@ export default function Watch() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="glass">
-                  <DropdownMenuItem onClick={() => setQuality("1080p")}>
-                    1080p {quality === "1080p" && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuality("720p")}>
-                    720p {quality === "720p" && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuality("480p")}>
-                    480p {quality === "480p" && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuality("Auto")}>
-                    Auto {quality === "Auto" && "✓"}
-                  </DropdownMenuItem>
+                  {(availableLevels.length > 0
+                    ? availableLevels
+                    : ["auto", "1080p", "720p", "480p"]).map((level) => (
+                    <DropdownMenuItem
+                      key={level}
+                      onClick={() => setQuality(level)}
+                      className="capitalize"
+                    >
+                      {level} {quality === level && "✓"}
+                    </DropdownMenuItem>
+                  ))}
                 </DropdownMenuContent>
               </DropdownMenu>
 

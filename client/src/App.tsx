@@ -1,18 +1,24 @@
 import { Switch, Route } from "wouter";
+import { Suspense, lazy } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
-import Landing from "@/pages/Landing";
-import Home from "@/pages/Home";
-import Movies from "@/pages/Movies";
-import Series from "@/pages/Series";
-import ContentDetail from "@/pages/ContentDetail";
-import Watch from "@/pages/Watch";
-import Watchlist from "@/pages/Watchlist";
-import Profile from "@/pages/Profile";
-import NotFound from "@/pages/not-found";
+import { SmoothScrollProvider } from "@/lib/smoothScroll";
+import { Cursor } from "@/components/Cursor";
+import { RouteFallback } from "@/components/RouteFallback";
+
+// Code-split every route so the initial bundle stays lean.
+const Landing = lazy(() => import("@/pages/Landing"));
+const Home = lazy(() => import("@/pages/Home"));
+const Movies = lazy(() => import("@/pages/Movies"));
+const Series = lazy(() => import("@/pages/Series"));
+const ContentDetail = lazy(() => import("@/pages/ContentDetail"));
+const Watch = lazy(() => import("@/pages/Watch"));
+const Watchlist = lazy(() => import("@/pages/Watchlist"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -42,8 +48,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
-        <Router />
+        <SmoothScrollProvider>
+          <Cursor />
+          <Toaster />
+          <Suspense fallback={<RouteFallback />}>
+            <Router />
+          </Suspense>
+        </SmoothScrollProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

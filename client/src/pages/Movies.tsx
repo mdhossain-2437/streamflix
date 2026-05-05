@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { useTmdbDiscover } from "@/lib/tmdb";
+import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { Content } from "@shared/schema";
 
 const GENRES = [
@@ -30,9 +32,27 @@ export default function Movies() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("popular");
 
-  const { data: movies = [], isLoading } = useQuery<Content[]>({
+  const sortMap: Record<string, string> = {
+    popular: "popularity.desc",
+    recent: "primary_release_date.desc",
+    rating: "vote_average.desc",
+    title: "original_title.asc",
+  };
+
+  const { data: localMovies = [], isLoading: localLoading } = useQuery<Content[]>({
     queryKey: ["/api/content", { type: "movie", genres: selectedGenres, sort: sortBy }],
   });
+
+  const { data: tmdbMovies, isLoading: tmdbLoading } = useTmdbDiscover({
+    kind: "movie",
+    sort: sortMap[sortBy] || "popularity.desc",
+  });
+
+  const isLoading = tmdbLoading || (!tmdbMovies && localLoading);
+  const movies: Content[] =
+    tmdbMovies && tmdbMovies.length > 0
+      ? tmdbMovies.map(tmdbToContent)
+      : localMovies;
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((prev) =>

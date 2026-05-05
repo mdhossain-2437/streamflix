@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { useTmdbDiscover } from "@/lib/tmdb";
+import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { Content } from "@shared/schema";
 
 const GENRES = [
@@ -30,9 +32,27 @@ export default function Series() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("popular");
 
-  const { data: series = [], isLoading } = useQuery<Content[]>({
+  const sortMap: Record<string, string> = {
+    popular: "popularity.desc",
+    recent: "first_air_date.desc",
+    rating: "vote_average.desc",
+    title: "name.asc",
+  };
+
+  const { data: localSeries = [], isLoading: localLoading } = useQuery<Content[]>({
     queryKey: ["/api/content", { type: "series", genres: selectedGenres, sort: sortBy }],
   });
+
+  const { data: tmdbSeries, isLoading: tmdbLoading } = useTmdbDiscover({
+    kind: "tv",
+    sort: sortMap[sortBy] || "popularity.desc",
+  });
+
+  const isLoading = tmdbLoading || (!tmdbSeries && localLoading);
+  const series: Content[] =
+    tmdbSeries && tmdbSeries.length > 0
+      ? tmdbSeries.map(tmdbToContent)
+      : localSeries;
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((prev) =>

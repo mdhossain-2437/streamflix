@@ -9,6 +9,8 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useTmdbTrending, useTmdbPopular, useTmdbTopRated } from "@/lib/tmdb";
+import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { Content, ViewingProgress } from "@shared/schema";
 
 export default function Home() {
@@ -33,7 +35,7 @@ export default function Home() {
     queryKey: ["/api/content/featured"],
   });
 
-  const { data: trending = [], isLoading: trendingLoading } = useQuery<Content[]>({
+  const { data: localTrending = [], isLoading: localTrendingLoading } = useQuery<Content[]>({
     queryKey: ["/api/content/trending"],
   });
 
@@ -43,13 +45,41 @@ export default function Home() {
     queryKey: ["/api/continue-watching"],
   });
 
-  const { data: movies = [], isLoading: moviesLoading } = useQuery<Content[]>({
+  const { data: localMovies = [], isLoading: localMoviesLoading } = useQuery<Content[]>({
     queryKey: ["/api/content", { type: "movie", limit: 20 }],
   });
 
-  const { data: series = [], isLoading: seriesLoading } = useQuery<Content[]>({
+  const { data: localSeries = [], isLoading: localSeriesLoading } = useQuery<Content[]>({
     queryKey: ["/api/content", { type: "series", limit: 20 }],
   });
+
+  // TMDB hooks return null when the API key isn't configured — fall back to
+  // the existing seeded content in that case.
+  const { data: tmdbTrending } = useTmdbTrending("week", "all");
+  const { data: tmdbMovies } = useTmdbPopular("movie");
+  const { data: tmdbSeries } = useTmdbPopular("tv");
+  const { data: tmdbTopMovies } = useTmdbTopRated("movie");
+
+  const trending: Content[] =
+    tmdbTrending && tmdbTrending.length > 0
+      ? tmdbTrending.slice(0, 10).map(tmdbToContent)
+      : localTrending;
+  const movies: Content[] =
+    tmdbMovies && tmdbMovies.length > 0
+      ? tmdbMovies.slice(0, 18).map(tmdbToContent)
+      : localMovies;
+  const series: Content[] =
+    tmdbSeries && tmdbSeries.length > 0
+      ? tmdbSeries.slice(0, 18).map(tmdbToContent)
+      : localSeries;
+  const topMovies: Content[] =
+    tmdbTopMovies && tmdbTopMovies.length > 0
+      ? tmdbTopMovies.slice(0, 18).map(tmdbToContent)
+      : [];
+
+  const trendingLoading = localTrendingLoading && !tmdbTrending;
+  const moviesLoading = localMoviesLoading && !tmdbMovies;
+  const seriesLoading = localSeriesLoading && !tmdbSeries;
 
   const continueWatchingProgress = continueWatching.reduce(
     (acc, item) => {
@@ -242,6 +272,15 @@ export default function Home() {
           seeAllLink="/series"
           isLoading={seriesLoading}
         />
+
+        {topMovies.length > 0 && (
+          <ContentRow
+            title="Top-Rated Cinema"
+            subtitle="The all-time best, scored by audiences"
+            contents={topMovies}
+            seeAllLink="/movies"
+          />
+        )}
       </div>
 
       <Footer />
