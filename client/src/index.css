@@ -62,7 +62,8 @@
   --chart-4: 160 65% 42%;
   --chart-5: 220 75% 48%;
 
-  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Bebas Neue", "Inter", -apple-system, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: "SF Mono", Menlo, Monaco, monospace;
   --radius: .5rem;
@@ -118,41 +119,44 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 0 0% 7%;
-  --foreground: 0 0% 95%;
-  --border: 0 0% 15%;
+  /* StreamFlix cinematic palette
+     Deep cinematic black with subtle blue cast, layered surfaces. */
+  --background: 222 18% 4%;
+  --foreground: 0 0% 96%;
+  --border: 0 0% 14%;
 
-  --card: 0 0% 10%;
-  --card-foreground: 0 0% 95%;
+  --card: 222 14% 7%;
+  --card-foreground: 0 0% 96%;
   --card-border: 0 0% 14%;
 
-  --sidebar: 0 0% 8%;
-  --sidebar-foreground: 0 0% 95%;
-  --sidebar-border: 0 0% 15%;
+  --sidebar: 222 16% 5%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-border: 0 0% 14%;
 
-  --sidebar-primary: 0 84% 52%;
+  --sidebar-primary: 357 92% 47%;
   --sidebar-primary-foreground: 0 0% 100%;
 
   --sidebar-accent: 0 2% 14%;
-  --sidebar-accent-foreground: 0 0% 95%;
+  --sidebar-accent-foreground: 0 0% 96%;
 
-  --sidebar-ring: 0 84% 52%;
+  --sidebar-ring: 357 92% 47%;
 
-  --popover: 0 0% 10%;
-  --popover-foreground: 0 0% 95%;
+  --popover: 222 14% 9%;
+  --popover-foreground: 0 0% 96%;
   --popover-border: 0 0% 18%;
 
-  --primary: 0 84% 52%;
+  /* Refined Netflix red */
+  --primary: 357 92% 47%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 0 0% 16%;
-  --secondary-foreground: 0 0% 95%;
+  --secondary: 0 0% 14%;
+  --secondary-foreground: 0 0% 96%;
 
-  --muted: 0 2% 14%;
-  --muted-foreground: 0 0% 60%;
+  --muted: 222 8% 12%;
+  --muted-foreground: 0 0% 64%;
 
   --accent: 0 3% 15%;
-  --accent-foreground: 0 0% 95%;
+  --accent-foreground: 0 0% 96%;
 
   --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
@@ -181,8 +185,45 @@
     @apply border-border;
   }
 
+  html {
+    color-scheme: dark;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11", "calt";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Refined typography */
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.015em;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.5);
+    color: hsl(var(--primary-foreground));
+  }
+
+  /* Cinematic scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(229, 9, 20, 0.55);
+    background-clip: content-box;
   }
 
   .scrollbar-hide::-webkit-scrollbar {
@@ -192,6 +233,155 @@
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+}
+
+@layer components {
+  /* Glassy panel like the Netflix top bar / detail backdrop */
+  .glass {
+    background: rgba(15, 17, 22, 0.55);
+    backdrop-filter: saturate(180%) blur(14px);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .glass-strong {
+    background: rgba(8, 9, 12, 0.78);
+    backdrop-filter: saturate(160%) blur(18px);
+    -webkit-backdrop-filter: saturate(160%) blur(18px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* Cinematic gradient text for hero kickers / accent */
+  .text-gradient-flame {
+    background: linear-gradient(120deg, #FF3B47 0%, #E50914 35%, #FF7A00 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-gradient-silver {
+    background: linear-gradient(180deg, #FFFFFF 0%, #BFC3CC 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Hero scrims */
+  .scrim-bottom::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(8, 9, 12, 0) 0%,
+      rgba(8, 9, 12, 0.25) 40%,
+      rgba(8, 9, 12, 0.85) 80%,
+      hsl(var(--background)) 100%
+    );
+    pointer-events: none;
+  }
+
+  .scrim-left::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      rgba(8, 9, 12, 0.95) 0%,
+      rgba(8, 9, 12, 0.7) 30%,
+      rgba(8, 9, 12, 0.2) 60%,
+      rgba(8, 9, 12, 0) 80%
+    );
+    pointer-events: none;
+  }
+
+  /* Shimmer skeleton */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      transparent 100%
+    );
+    animation: shimmer 1.6s linear infinite;
+    background-size: 800px 100%;
+  }
+
+  /* Premium primary CTA */
+  .btn-cinema {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-md font-semibold text-primary-foreground transition-transform duration-200 ease-cinema;
+    background: linear-gradient(135deg, #FF1F2D 0%, #E50914 50%, #B0060F 100%);
+    box-shadow: 0 10px 30px -10px rgba(229, 9, 20, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .btn-cinema:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px -8px rgba(229, 9, 20, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  .btn-cinema:active {
+    transform: translateY(0);
+  }
+
+  /* Top 10 ranked numeral (used behind cards) */
+  .top10-numeral {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 0.78;
+    letter-spacing: -0.05em;
+    color: transparent;
+    -webkit-text-stroke: 6px rgba(255, 255, 255, 0.96);
+    text-stroke: 6px rgba(255, 255, 255, 0.96);
+    text-shadow: 0 30px 50px rgba(0, 0, 0, 0.55);
+    user-select: none;
+  }
+
+  /* Cinematic content row scroll arrow buttons */
+  .row-arrow {
+    @apply absolute top-0 bottom-6 z-30 hidden md:flex items-center justify-center w-12 cursor-pointer;
+    @apply text-white/90 transition-opacity duration-300 opacity-0 group-hover:opacity-100;
+    background: linear-gradient(
+      90deg,
+      rgba(8, 9, 12, 0.95) 0%,
+      rgba(8, 9, 12, 0.65) 60%,
+      rgba(8, 9, 12, 0) 100%
+    );
+  }
+  .row-arrow.right {
+    background: linear-gradient(
+      270deg,
+      rgba(8, 9, 12, 0.95) 0%,
+      rgba(8, 9, 12, 0.65) 60%,
+      rgba(8, 9, 12, 0) 100%
+    );
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  /* Subtle noise texture for hero (improves perceived quality) */
+  .noise::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 }
 

@@ -23,13 +23,44 @@ export async function apiRequest(
   return res;
 }
 
+function buildUrlFromQueryKey(queryKey: readonly unknown[]): string {
+  if (queryKey.length === 0) return "";
+  const [first, ...rest] = queryKey;
+  if (typeof first !== "string") return queryKey.join("/");
+
+  const params = new URLSearchParams();
+  const segments: string[] = [];
+  for (const part of rest) {
+    if (part == null) continue;
+    if (typeof part === "string" || typeof part === "number") {
+      segments.push(String(part));
+      continue;
+    }
+    if (typeof part === "object") {
+      for (const [key, value] of Object.entries(part as Record<string, unknown>)) {
+        if (value == null || value === "") continue;
+        if (Array.isArray(value)) {
+          if (value.length === 0) continue;
+          for (const v of value) params.append(key, String(v));
+        } else {
+          params.append(key, String(value));
+        }
+      }
+    }
+  }
+  const base = [first, ...segments].join("/").replace(/\/+$/, "");
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const url = buildUrlFromQueryKey(queryKey);
+    const res = await fetch(url, {
       credentials: "include",
     });
 
