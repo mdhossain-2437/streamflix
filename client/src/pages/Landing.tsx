@@ -1,4 +1,4 @@
-import { useEffect, useRef, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -34,6 +34,32 @@ const ShaderHero = lazy(() =>
   import("@/components/ShaderHero").then((m) => ({ default: m.ShaderHero })),
 );
 import { useScramble } from "@/lib/useScramble";
+
+// Defer the WebGL hero until the browser is idle so the initial paint is
+// not blocked by ~700kB of Three.js + R3F. The CSS gradient backdrop covers
+// the visual until the shader streams in. Skips entirely on slow connections
+// or coarse-pointer devices.
+function useDeferredShaderHero() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (conn?.saveData) return;
+    if (conn?.effectiveType && /(^|-)2g$/.test(conn.effectiveType)) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    if (typeof ric === "function") {
+      const id = ric(() => setReady(true), { timeout: 1500 });
+      return () => {
+        const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+        if (typeof cic === "function") cic(id);
+      };
+    }
+    const t = window.setTimeout(() => setReady(true), 600);
+    return () => window.clearTimeout(t);
+  }, []);
+  return ready;
+}
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -136,6 +162,7 @@ export default function Landing() {
   const sotdRef = useScramble<HTMLSpanElement>("Site of the Day · 2026", {
     trigger: "view",
   });
+  const shaderReady = useDeferredShaderHero();
 
   // Hero parallax — title sinks slightly, shader hero zooms out as you scroll.
   const { scrollY } = useScroll();
@@ -235,13 +262,17 @@ export default function Landing() {
           style={{ scale: shaderScale, opacity: shaderOpacity }}
           className="absolute inset-0"
         >
-          <Suspense
-            fallback={
-              <div className="absolute inset-0 bg-gradient-to-br from-[#0b0c10] via-[#7c0a14] to-[#ff3344] opacity-70" />
-            }
-          >
-            <ShaderHero intensity={1.0} />
-          </Suspense>
+          {shaderReady ? (
+            <Suspense
+              fallback={
+                <div className="absolute inset-0 bg-gradient-to-br from-[#0b0c10] via-[#7c0a14] to-[#ff3344] opacity-70" />
+              }
+            >
+              <ShaderHero intensity={1.0} />
+            </Suspense>
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-[#0b0c10] via-[#7c0a14] to-[#ff3344] opacity-70" />
+          )}
         </motion.div>
         <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-transparent to-background" />
         <div className="absolute inset-0 bg-[radial-gradient(120%_60%_at_50%_120%,rgba(229,9,20,0.35),transparent_60%)] mix-blend-screen" />

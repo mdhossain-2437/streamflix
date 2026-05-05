@@ -1,0 +1,13 @@
+{
+  "name": "StreamFlix",
+  "short_name": "StreamFlix",
+  "description": "Cinematic streaming, reimagined.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0c10",
+  "theme_color": "#0b0c10",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/favicon.png", "type": "image/png", "sizes": "192x192", "purpose": "any" }
+  ]
+}
