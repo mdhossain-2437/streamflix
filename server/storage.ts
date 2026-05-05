@@ -166,14 +166,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createContent(contentData: InsertContent): Promise<Content> {
-    const [item] = await db.insert(content).values(contentData).returning();
+    const [item] = await db
+      .insert(content)
+      .values(contentData as never)
+      .returning();
     return item;
   }
 
   async updateContent(id: string, contentData: Partial<InsertContent>): Promise<Content> {
     const [updated] = await db
       .update(content)
-      .set(contentData)
+      .set(contentData as never)
       .where(eq(content.id, id))
       .returning();
     return updated;
@@ -261,7 +264,9 @@ export class DatabaseStorage implements IStorage {
         )
       );
 
-    const completed = data.progressSeconds >= data.durationSeconds * 0.9;
+    const progressSeconds = data.progressSeconds ?? 0;
+    const durationSeconds = data.durationSeconds ?? 0;
+    const completed = durationSeconds > 0 && progressSeconds >= durationSeconds * 0.9;
 
     if (existing.length > 0) {
       const [updated] = await db
