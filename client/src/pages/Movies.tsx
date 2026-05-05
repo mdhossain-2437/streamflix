@@ -1,64 +1,72 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Filter } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { ContentCard, ContentCardSkeleton } from "@/components/ContentCard";
 import { Footer } from "@/components/Footer";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { useTmdbDiscover } from "@/lib/tmdb";
+import { FilterBar, DEFAULT_FILTERS, type FilterState } from "@/components/FilterBar";
+import { useDiscover } from "@/lib/api";
 import { tmdbToContent } from "@/lib/tmdbAdapter";
-import type { Content } from "@shared/schema";
-
-const GENRES = [
-  "Action",
-  "Comedy",
-  "Drama",
-  "Horror",
-  "Sci-Fi",
-  "Romance",
-  "Thriller",
-  "Documentary",
-];
+import type { CatalogItem } from "@/lib/api";
 
 export default function Movies() {
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState("popular");
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [page, setPage] = useState(1);
+  const [allResults, setAllResults] = useState<CatalogItem[]>([]);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const sortMap: Record<string, string> = {
-    popular: "popularity.desc",
-    recent: "primary_release_date.desc",
-    rating: "vote_average.desc",
-    title: "original_title.asc",
-  };
+  const params = useMemo(
+    () => ({
+      kind: "movie",
+      sort: filters.sort,
+      genre: filters.genres.length > 0 ? filters.genres.join(",") : undefined,
+      year: filters.year || undefined,
+      lang: filters.language || undefined,
+      minRating: filters.minRating > 0 ? String(filters.minRating * 2) : undefined,
+      minRuntime: filters.minRuntime > 0 ? String(filters.minRuntime) : undefined,
+      maxRuntime: filters.maxRuntime < 400 ? String(filters.maxRuntime) : undefined,
+      page,
+    }),
+    [filters, page],
+  );
 
-  const { data: localMovies = [], isLoading: localLoading } = useQuery<Content[]>({
-    queryKey: ["/api/content", { type: "movie", genres: selectedGenres, sort: sortBy }],
-  });
+  const { data, isLoading, isFetching } = useDiscover(params);
 
-  const { data: tmdbMovies, isLoading: tmdbLoading } = useTmdbDiscover({
-    kind: "movie",
-    sort: sortMap[sortBy] || "popularity.desc",
-  });
+  // Reset on filter change.
+  useEffect(() => {
+    setPage(1);
+    setAllResults([]);
+  }, [filters]);
 
-  const isLoading = tmdbLoading || (!tmdbMovies && localLoading);
-  const movies: Content[] =
-    tmdbMovies && tmdbMovies.length > 0
-      ? tmdbMovies.map(tmdbToContent)
-      : localMovies;
+  // Append paginated results.
+  useEffect(() => {
+    if (!data?.results) return;
+    setAllResults((prev) => {
+      const ids = new Set(prev.map((p) => p.id));
+      const next = [...prev];
+      for (const r of data.results) {
+        if (!ids.has(r.id)) next.push(r);
+      }
+      return next;
+    });
+  }, [data?.results, page]);
 
-  const toggleGenre = (genre: string) => {
-    setSelectedGenres((prev) =>
-      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre],
+  // IntersectionObserver-driven infinite scroll.
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    if (!data || page >= data.totalPages) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetching) {
+          setPage((p) => p + 1);
+        }
+      },
+      { rootMargin: "600px" },
     );
-  };
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [data, page, isFetching]);
+
+  const movies = allResults;
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,79 +92,36 @@ export default function Movies() {
               Movies
             </h1>
             <p className="text-muted-foreground max-w-xl">
-              Cinematic features hand-picked by our editorial team — from indie gems to
-              blockbuster classics.
+              The full TMDB catalog — discover by genre, year, language, runtime, and rating.
             </p>
           </motion.div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2 text-foreground/80">
-              <Filter className="w-4 h-4" />
-              <span className="text-xs font-semibold uppercase tracking-wider">Genres</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {GENRES.map((genre) => {
-                const active = selectedGenres.includes(genre);
-                return (
-                  <Badge
-                    key={genre}
-                    variant={active ? "default" : "outline"}
-                    className={`cursor-pointer h-8 px-3.5 text-xs font-medium tracking-wide transition-all duration-200 ${
-                      active
-                        ? "bg-primary/90 text-primary-foreground border-primary shadow-glow-sm"
-                        : "bg-white/[0.04] border-white/10 text-foreground/80 hover:bg-white/[0.08]"
-                    }`}
-                    onClick={() => toggleGenre(genre)}
-                    data-testid={`badge-genre-${genre.toLowerCase()}`}
-                  >
-                    {genre}
-                  </Badge>
-                );
-              })}
-            </div>
+          <FilterBar kind="movie" value={filters} onChange={setFilters} />
 
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger
-                className="w-44 ml-auto bg-white/[0.04] border-white/10 hover:bg-white/[0.08]"
-                data-testid="select-sort"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="glass">
-                <SelectItem value="popular">Most Popular</SelectItem>
-                <SelectItem value="recent">Recently Added</SelectItem>
-                <SelectItem value="rating">Highest Rated</SelectItem>
-                <SelectItem value="title">Title A-Z</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isLoading ? (
+          {isLoading && movies.length === 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
               {Array.from({ length: 18 }).map((_, i) => (
                 <ContentCardSkeleton key={i} />
               ))}
             </div>
-          ) : movies.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
-              {movies.map((movie, i) => (
-                <motion.div
-                  key={movie.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: Math.min(i * 0.02, 0.5) }}
-                >
-                  <ContentCard content={movie} />
-                </motion.div>
-              ))}
+          ) : movies.length === 0 ? (
+            <div className="py-20 text-center text-muted-foreground">
+              No movies match these filters. Try removing some.
             </div>
           ) : (
-            <div className="text-center py-20 space-y-3">
-              <p className="text-2xl font-semibold">No movies found</p>
-              <p className="text-muted-foreground">
-                Try adjusting your genre filters.
-              </p>
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
+                {movies.map((m) => (
+                  <ContentCard key={m.id} content={tmdbToContent(m)} />
+                ))}
+              </div>
+              <div ref={sentinelRef} className="h-12" />
+              {isFetching && page > 1 && (
+                <div className="text-center text-sm text-muted-foreground py-4">
+                  Loading more…
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

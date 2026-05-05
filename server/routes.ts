@@ -1,8 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated } from "./auth";
 import { registerTmdbRoutes } from "./tmdb";
+import { registerOmdbRoutes } from "./omdb";
+import { registerOpenAiRoutes } from "./openai";
 import {
   insertContentSchema,
   insertWatchlistSchema,
@@ -10,11 +12,16 @@ import {
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
+  // Auth middleware (uses Replit Auth when REPL_ID is set, otherwise an
+  // anonymous cookie-based guest session that persists watchlist + history
+  // for one device).
   await setupAuth(app);
 
-  // TMDB metadata proxy (real movie/series data when TMDB_API_KEY is set)
+  // External metadata proxies. All return 503 when their key is missing so
+  // the client can render disabled placeholders or fall back to mock data.
   registerTmdbRoutes(app);
+  registerOmdbRoutes(app);
+  registerOpenAiRoutes(app);
 
   // Auth routes
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {

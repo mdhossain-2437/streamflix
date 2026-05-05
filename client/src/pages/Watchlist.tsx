@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
 import { Trash2, Bookmark, Compass } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -11,7 +11,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { Content } from "@shared/schema";
+import { parseCatalogId, type ContentDetail } from "@/lib/api";
+import { tmdbToContent } from "@/lib/tmdbAdapter";
+
+interface WatchlistEntry {
+  contentId: string;
+  addedAt: string;
+}
 
 export default function Watchlist() {
   const { toast } = useToast();
@@ -31,9 +37,37 @@ export default function Watchlist() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: watchlist = [], isLoading: isLoadingWatchlist } = useQuery<Content[]>({
+  const { data: entries = [], isLoading: isLoadingWatchlist } = useQuery<WatchlistEntry[]>({
     queryKey: ["/api/watchlist"],
   });
+
+  // Hydrate each id into a ContentDetail in parallel.
+  const detailQueries = useQueries({
+    queries: entries.map((e) => {
+      const parsed = parseCatalogId(e.contentId);
+      const path = parsed?.type === "series" ? "series" : "movie";
+      return {
+        queryKey: [`/api/tmdb/${path}/${parsed?.tmdbId}`],
+        queryFn: async () => {
+          const res = await fetch(`/api/tmdb/${path}/${parsed?.tmdbId}`, {
+            credentials: "include",
+          });
+          if (res.status === 503 || res.status === 404) return null;
+          if (!res.ok) throw new Error(String(res.status));
+          return (await res.json()) as ContentDetail;
+        },
+        enabled: !!parsed,
+        staleTime: 30 * 60 * 1000,
+      };
+    }),
+  });
+
+  const watchlist = detailQueries
+    .map((q) => q.data)
+    .filter((d): d is ContentDetail => !!d)
+    .map(tmdbToContent);
+
+  const allLoaded = detailQueries.every((q) => !q.isLoading);
 
   const removeMutation = useMutation({
     mutationFn: async (contentId: string) => {
@@ -63,6 +97,8 @@ export default function Watchlist() {
     },
   });
 
+  const showSkeleton = isLoadingWatchlist || (entries.length > 0 && !allLoaded);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -88,14 +124,14 @@ export default function Watchlist() {
                 My List
               </h1>
               <p className="text-muted-foreground">
-                {isLoadingWatchlist
+                {showSkeleton
                   ? "Loading your queue…"
                   : `${watchlist.length} ${watchlist.length === 1 ? "title" : "titles"} ready for tonight.`}
               </p>
             </div>
           </motion.div>
 
-          {isLoading || isLoadingWatchlist ? (
+          {showSkeleton ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
               {Array.from({ length: 12 }).map((_, i) => (
                 <ContentCardSkeleton key={i} />
@@ -124,26 +160,24 @@ export default function Watchlist() {
                     disabled={removeMutation.isPending}
                     data-testid={`button-remove-${content.id}`}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </motion.div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-20 space-y-5 max-w-md mx-auto">
-              <div className="mx-auto w-20 h-20 grid place-items-center rounded-full bg-gradient-to-br from-primary/20 to-rose-700/10 border border-white/10">
-                <Bookmark className="w-8 h-8 text-primary" />
+            <div className="text-center py-20 space-y-4">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-card/80 ring-1 ring-white/10">
+                <Bookmark className="w-8 h-8 text-muted-foreground" />
               </div>
-              <div className="space-y-2">
-                <p className="text-2xl font-semibold">Your list is empty</p>
-                <p className="text-muted-foreground">
-                  Save movies and shows to watch later — they'll appear here ready to play.
-                </p>
-              </div>
-              <Link href="/">
-                <Button className="btn-cinema h-11 px-6">
-                  <Compass className="w-4 h-4 mr-2" />
-                  Browse titles
+              <p className="text-xl font-semibold">Your list is empty.</p>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Tap the “+” icon on any title to save it for later.
+              </p>
+              <Link href="/movies">
+                <Button className="gap-2">
+                  <Compass className="w-4 h-4" />
+                  Discover titles
                 </Button>
               </Link>
             </div>

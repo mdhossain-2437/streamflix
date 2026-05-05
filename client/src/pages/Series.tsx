@@ -1,64 +1,63 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Filter } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { ContentCard, ContentCardSkeleton } from "@/components/ContentCard";
 import { Footer } from "@/components/Footer";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { useTmdbDiscover } from "@/lib/tmdb";
+import { FilterBar, DEFAULT_FILTERS, type FilterState } from "@/components/FilterBar";
+import { useDiscover } from "@/lib/api";
 import { tmdbToContent } from "@/lib/tmdbAdapter";
-import type { Content } from "@shared/schema";
-
-const GENRES = [
-  "Action",
-  "Comedy",
-  "Drama",
-  "Horror",
-  "Sci-Fi",
-  "Romance",
-  "Thriller",
-  "Documentary",
-];
+import type { CatalogItem } from "@/lib/api";
 
 export default function Series() {
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState("popular");
-
-  const sortMap: Record<string, string> = {
-    popular: "popularity.desc",
-    recent: "first_air_date.desc",
-    rating: "vote_average.desc",
-    title: "name.asc",
-  };
-
-  const { data: localSeries = [], isLoading: localLoading } = useQuery<Content[]>({
-    queryKey: ["/api/content", { type: "series", genres: selectedGenres, sort: sortBy }],
+  const [filters, setFilters] = useState<FilterState>({
+    ...DEFAULT_FILTERS,
+    sort: "popularity.desc",
   });
+  const [page, setPage] = useState(1);
+  const [allResults, setAllResults] = useState<CatalogItem[]>([]);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data: tmdbSeries, isLoading: tmdbLoading } = useTmdbDiscover({
-    kind: "tv",
-    sort: sortMap[sortBy] || "popularity.desc",
-  });
+  const params = useMemo(
+    () => ({
+      kind: "tv",
+      sort: filters.sort,
+      genre: filters.genres.length > 0 ? filters.genres.join(",") : undefined,
+      year: filters.year || undefined,
+      lang: filters.language || undefined,
+      minRating: filters.minRating > 0 ? String(filters.minRating * 2) : undefined,
+      page,
+    }),
+    [filters, page],
+  );
 
-  const isLoading = tmdbLoading || (!tmdbSeries && localLoading);
-  const series: Content[] =
-    tmdbSeries && tmdbSeries.length > 0
-      ? tmdbSeries.map(tmdbToContent)
-      : localSeries;
+  const { data, isLoading, isFetching } = useDiscover(params);
 
-  const toggleGenre = (genre: string) => {
-    setSelectedGenres((prev) =>
-      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre],
+  useEffect(() => {
+    setPage(1);
+    setAllResults([]);
+  }, [filters]);
+
+  useEffect(() => {
+    if (!data?.results) return;
+    setAllResults((prev) => {
+      const ids = new Set(prev.map((p) => p.id));
+      const next = [...prev];
+      for (const r of data.results) if (!ids.has(r.id)) next.push(r);
+      return next;
+    });
+  }, [data?.results, page]);
+
+  useEffect(() => {
+    if (!sentinelRef.current || !data || page >= data.totalPages) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetching) setPage((p) => p + 1);
+      },
+      { rootMargin: "600px" },
     );
-  };
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [data, page, isFetching]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -88,74 +87,32 @@ export default function Series() {
             </p>
           </motion.div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2 text-foreground/80">
-              <Filter className="w-4 h-4" />
-              <span className="text-xs font-semibold uppercase tracking-wider">Genres</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {GENRES.map((genre) => {
-                const active = selectedGenres.includes(genre);
-                return (
-                  <Badge
-                    key={genre}
-                    variant={active ? "default" : "outline"}
-                    className={`cursor-pointer h-8 px-3.5 text-xs font-medium tracking-wide transition-all duration-200 ${
-                      active
-                        ? "bg-primary/90 text-primary-foreground border-primary shadow-glow-sm"
-                        : "bg-white/[0.04] border-white/10 text-foreground/80 hover:bg-white/[0.08]"
-                    }`}
-                    onClick={() => toggleGenre(genre)}
-                    data-testid={`badge-genre-${genre.toLowerCase()}`}
-                  >
-                    {genre}
-                  </Badge>
-                );
-              })}
-            </div>
+          <FilterBar kind="tv" value={filters} onChange={setFilters} />
 
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger
-                className="w-44 ml-auto bg-white/[0.04] border-white/10 hover:bg-white/[0.08]"
-                data-testid="select-sort"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="glass">
-                <SelectItem value="popular">Most Popular</SelectItem>
-                <SelectItem value="recent">Recently Added</SelectItem>
-                <SelectItem value="rating">Highest Rated</SelectItem>
-                <SelectItem value="title">Title A-Z</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isLoading ? (
+          {isLoading && allResults.length === 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
               {Array.from({ length: 18 }).map((_, i) => (
                 <ContentCardSkeleton key={i} />
               ))}
             </div>
-          ) : series.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
-              {series.map((show, i) => (
-                <motion.div
-                  key={show.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: Math.min(i * 0.02, 0.5) }}
-                >
-                  <ContentCard content={show} />
-                </motion.div>
-              ))}
+          ) : allResults.length === 0 ? (
+            <div className="py-20 text-center text-muted-foreground">
+              No series match these filters.
             </div>
           ) : (
-            <div className="text-center py-20 space-y-3">
-              <p className="text-2xl font-semibold">No TV shows found</p>
-              <p className="text-muted-foreground">
-                Try adjusting your genre filters.
-              </p>
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
+                {allResults.map((s) => (
+                  <ContentCard key={s.id} content={tmdbToContent(s)} />
+                ))}
+              </div>
+              <div ref={sentinelRef} className="h-12" />
+              {isFetching && page > 1 && (
+                <div className="text-center text-sm text-muted-foreground py-4">
+                  Loading more…
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
