@@ -1,6 +1,14 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { installDemoMock } from "./lib/demoMock";
+
+// In static/demo deployments (no Express backend), install an in-browser API
+// mock so the entire app works standalone. The mock is tree-shaken in dev
+// when a real backend is running — it only activates when the flag is set.
+if (import.meta.env.VITE_DEMO_MODE === "true") {
+  installDemoMock();
+}
 
 createRoot(document.getElementById("root")!).render(<App />);
 
