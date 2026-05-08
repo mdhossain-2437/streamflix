@@ -14,6 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useState, useRef } from "react";
+import { DownloadQueuePanel } from "@/components/DownloadQueuePanel";
 
 export function Navbar() {
   const [location, setLocation] = useLocation();
@@ -36,6 +37,7 @@ export function Navbar() {
     { path: "/series", label: "TV Shows" },
     { path: "/free", label: "Free" },
     { path: "/collections", label: "Collections" },
+    { path: "/library", label: "My Library" },
     { path: "/watchlist", label: "My List" },
   ];
 
@@ -176,6 +178,8 @@ export function Navbar() {
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary shadow-[0_0_0_3px_hsl(var(--background))]" />
             </Button>
+
+            <DownloadQueuePanel />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

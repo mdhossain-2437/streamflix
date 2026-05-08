@@ -21,6 +21,8 @@ const Watchlist = lazy(() => import("@/pages/Watchlist"));
 const Profile = lazy(() => import("@/pages/Profile"));
 const Person = lazy(() => import("@/pages/Person"));
 const Free = lazy(() => import("@/pages/Free"));
+const FreeRow = lazy(() => import("@/pages/FreeRow"));
+const Library = lazy(() => import("@/pages/Library"));
 const Collections = lazy(() => import("@/pages/Collections"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -44,7 +46,10 @@ function Router() {
           <Route path="/profile" component={Profile} />
           <Route path="/person/:id" component={Person} />
           <Route path="/free" component={Free} />
+          <Route path="/free/row/:id" component={FreeRow} />
           <Route path="/free/:id" component={Watch} />
+          <Route path="/library" component={Library} />
+          <Route path="/library/watch/:id" component={Watch} />
           <Route path="/collections" component={Collections} />
           <Route path="/collection/:id" component={Collections} />
         </>

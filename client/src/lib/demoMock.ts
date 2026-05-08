@@ -860,6 +860,68 @@ async function archiveItemDetail(identifier: string): Promise<Response> {
   });
 }
 
+// Mirror of server/archive.ts CURATED_ROWS so the static demo also has rich
+// genre rows. Keep this in sync.
+const CURATED_ROWS_DEMO: Array<{ id: string; label: string; description: string; query: string }> = [
+  { id: "feature-films", label: "Public-Domain Feature Films",
+    description: "Full-length classics, all rights expired or freely licensed.",
+    query: "collection:(feature_films) AND mediatype:(movies) AND format:(h.264)" },
+  { id: "classic-westerns", label: "Classic Westerns",
+    description: "John Wayne, Roy Rogers, and the rest of the silver-screen frontier.",
+    query: "collection:(classic_western) AND mediatype:(movies)" },
+  { id: "silent-cinema", label: "Silent Cinema",
+    description: "Charlie Chaplin, Buster Keaton, Lillian Gish, Méliès, Murnau.",
+    query: "(collection:(silent_films) OR collection:(silent_hall_of_fame) OR collection:(silent_features)) AND mediatype:(movies)" },
+  { id: "classic-animation", label: "Classic Animation",
+    description: "Pre-1955 Looney Tunes, Betty Boop, Popeye, Fleischer Studios.",
+    query: "collection:(classic_cartoons) AND mediatype:(movies)" },
+  { id: "classic-horror", label: "Classic Horror",
+    description: "Vintage chillers from the golden age of public-domain horror.",
+    query: "collection:(classic_horror) AND mediatype:(movies)" },
+  { id: "sci-fi-shorts", label: "Sci-Fi & Fantasy Shorts",
+    description: "Atomic-age sci-fi serials, B-movie matinees, fantasy reels.",
+    query: "collection:(sf_short_films) AND mediatype:(movies)" },
+  { id: "film-noir", label: "Film Noir",
+    description: "Smoke-filled rooms, double-crosses, and venetian blinds.",
+    query: "collection:(film_noir) AND mediatype:(movies)" },
+  { id: "prelinger-archives", label: "Prelinger Archives",
+    description: "Mid-century industrial, advertising, and educational films.",
+    query: "collection:(prelinger) AND mediatype:(movies)" },
+  { id: "nasa-archive", label: "NASA Film Archive",
+    description: "Mission footage, agency documentaries, and vintage promo reels.",
+    query: "(collection:(nasa) OR collection:(nasa_techdoc_videos)) AND mediatype:(movies)" },
+  { id: "classic-tv", label: "Classic TV",
+    description: "Public-domain Twilight Zone era TV — Lone Ranger, Beverly Hillbillies pilot, etc.",
+    query: "collection:(classic_tv) AND mediatype:(movies)" },
+  { id: "library-of-congress", label: "Library of Congress",
+    description: "Curated entries from the LoC's National Screening Room.",
+    query: "collection:(libraryofcongress) AND mediatype:(movies)" },
+];
+
+async function archiveSearchAsItems(query: string, rows: number, page: number): Promise<{
+  items: Array<Record<string, unknown>>;
+  numFound: number;
+}> {
+  const url =
+    `${ARCHIVE_SEARCH}?` +
+    [
+      `q=${encodeURIComponent(query)}`,
+      `fl[]=identifier`, `fl[]=title`, `fl[]=description`, `fl[]=creator`,
+      `fl[]=year`, `fl[]=date`, `fl[]=avg_rating`, `fl[]=subject`, `fl[]=runtime`,
+      `sort[]=downloads desc`,
+      `rows=${rows}`, `page=${page}`, `output=json`,
+    ].join("&");
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return { items: [], numFound: 0 };
+    const data = (await res.json()) as { response?: { docs?: ArchiveSearchDoc[]; numFound?: number } };
+    const docs = data.response?.docs || [];
+    return { items: docs.map(archiveDocToItem), numFound: data.response?.numFound || docs.length };
+  } catch {
+    return { items: [], numFound: 0 };
+  }
+}
+
 async function handleArchiveProxy(url: URL): Promise<Response | null> {
   const path = url.pathname;
   const sp = url.searchParams;
@@ -871,6 +933,23 @@ async function handleArchiveProxy(url: URL): Promise<Response | null> {
   }
   if (path === "/api/archive/featured") {
     return archiveSearch(ARCHIVE_FEATURED_QUERY, limit, page);
+  }
+  if (path === "/api/archive/curated") {
+    const rowLimit = Math.min(parseInt(sp.get("limit") || "16", 10) || 16, 30);
+    const rows = await Promise.all(
+      CURATED_ROWS_DEMO.map(async (row) => {
+        const out = await archiveSearchAsItems(row.query, rowLimit, 1);
+        return { ...row, items: out.items, numFound: out.numFound };
+      }),
+    );
+    return mockResponse({ rows });
+  }
+  const rowMatch = path.match(/^\/api\/archive\/row\/([^/]+)$/);
+  if (rowMatch) {
+    const row = CURATED_ROWS_DEMO.find((r) => r.id === rowMatch[1]);
+    if (!row) return mockResponse({ message: "Row not found" }, 404);
+    const out = await archiveSearchAsItems(row.query, limit, page);
+    return mockResponse({ ...row, ...out });
   }
   if (path === "/api/archive/search") {
     const q = sp.get("q") || "";

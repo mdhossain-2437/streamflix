@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, X, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Download, X, CheckCircle2, AlertTriangle, Loader2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   downloadVideo,
@@ -7,6 +7,7 @@ import {
   isDownloadableSource,
   type DownloadOptions,
 } from "@/lib/downloader";
+import { downloadQueue } from "@/lib/downloadQueue";
 
 interface Props {
   open: boolean;
@@ -30,6 +31,7 @@ export function DownloadDialog({
   episode,
 }: Props) {
   const [burn, setBurn] = useState(false);
+  const [concurrency, setConcurrency] = useState(4);
   const [phase, setPhase] = useState<Phase>("idle");
   const [ratio, setRatio] = useState(0);
   const [message, setMessage] = useState("");
@@ -95,6 +97,21 @@ export function DownloadDialog({
     setMessage("");
   };
 
+  const queueInBackground = async () => {
+    if (!source) return;
+    await downloadQueue.enqueue({
+      id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      url: source,
+      title,
+      year,
+      kind,
+      episode,
+      concurrency,
+      burnWatermark: burn,
+    });
+    onClose();
+  };
+
   return (
     <AnimatePresence>
       {open && (
@@ -150,8 +167,35 @@ export function DownloadDialog({
               </div>
             </div>
 
+            <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-white inline-flex items-center gap-1.5">
+                    <Zap className="h-4 w-4 text-amber-300" /> Parallel connections
+                  </div>
+                  <div className="text-xs text-white/50 mt-0.5">
+                    Splits the file across multiple HTTP streams. 4–6 saturates most links; max out only on fibre.
+                  </div>
+                </div>
+                <div className="text-2xl font-bold tabular-nums text-white pl-4">{concurrency}</div>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={8}
+                step={1}
+                value={concurrency}
+                onChange={(e) => setConcurrency(Number(e.target.value))}
+                className="mt-3 w-full accent-amber-400"
+                aria-label="Concurrency"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-white/40">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+              </div>
+            </div>
+
             <label
-              className={`mt-4 flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition ${
+              className={`mt-3 flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition ${
                 burn
                   ? "border-rose-500/40 bg-rose-500/10"
                   : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
@@ -175,6 +219,7 @@ export function DownloadDialog({
                 </div>
               </div>
             </label>
+
 
             {!downloadable && source && (
               <div className="mt-4 flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
@@ -249,12 +294,20 @@ export function DownloadDialog({
                     Cancel
                   </button>
                   <button
+                    onClick={queueInBackground}
+                    disabled={!source || !downloadable}
+                    className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Zap className="h-4 w-4" />
+                    Queue in background
+                  </button>
+                  <button
                     onClick={start}
                     disabled={!source || !downloadable}
                     className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-rose-500 to-fuchsia-500 px-5 py-2 text-sm font-semibold text-white shadow hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download className="h-4 w-4" />
-                    Start download
+                    Download now
                   </button>
                 </>
               )}
