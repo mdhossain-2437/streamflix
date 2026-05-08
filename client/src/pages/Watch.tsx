@@ -19,16 +19,22 @@ interface ProgressRecord {
   completed: boolean;
 }
 
-// Public test HLS streams. Used for the player demo since real movies
-// aren't licensed; the player chrome itself is fully production.
+// Public test HLS streams used for the player demo since real licensed
+// titles can't be hosted. All sources below are CORS-enabled so hls.js
+// can fetch their segments cleanly. The quality menu surfaces every
+// rung the manifest exposes — when the configured stream provides 4K /
+// HDR rungs they show up automatically.
 const SAMPLE_SOURCES = [
+  // Mux Big Buck Bunny — multi-bitrate ladder up to 1080p
   "https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8",
+  // Tears of Steel — 1920x800 cinematic master
+  "https://test-streams.mux.dev/tos_ismc/main.m3u8",
+  // Mux test stream — 1080p ladder
   "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-  "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
 ];
 
-// Public sample VTT subtitles (Mozilla / TUI test fixtures). Browsers must
-// fetch them with crossOrigin=anonymous, which the player sets on the <video>.
+// Public sample VTT subtitles (Mozilla / TUI test fixtures). Hosts must
+// expose CORS headers on these files for the <track> element to load them.
 const SAMPLE_SUBTITLES: SubtitleTrack[] = [
   {
     src: "https://raw.githubusercontent.com/brenopolanski/html5-video-webvtt-example/master/MIB2-subtitles-pt-BR.vtt",
