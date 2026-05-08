@@ -2,7 +2,7 @@
 // Content (Drizzle schema). ContentCard, ContentRow, etc. only consume
 // id/type/title/description/thumbnailUrl/posterUrl, so the cast is safe.
 import type { Content } from "@shared/schema";
-import type { CatalogItem, ContentDetail } from "./api";
+import type { ArchiveItem, CatalogItem, ContentDetail } from "./api";
 
 // Legacy shim — kept so old callers compile.
 export interface TmdbItem {
@@ -51,6 +51,34 @@ export function tmdbToContent(
         : item.rating?.toString() ?? null,
     duration: item.durationMin ?? null,
     seasons: seasonCount,
+    genres: item.genres ?? [],
+    cast: null,
+    director: null,
+    isFeatured: false,
+    isTrending: false,
+    isTop10: false,
+    rank: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as unknown as Content;
+}
+
+export function archiveToContent(item: ArchiveItem): Content {
+  return {
+    id: item.id,
+    type: "movie",
+    title: item.title,
+    description: item.description,
+    posterUrl: item.posterUrl,
+    backdropUrl: item.backdropUrl,
+    thumbnailUrl: item.thumbnailUrl,
+    videoUrl: null,
+    trailerUrl: null,
+    releaseYear: item.year ? Number(item.year) : null,
+    rating: "Free",
+    imdbRating: item.rating !== null ? item.rating.toFixed(1) : null,
+    duration: item.durationMin,
+    seasons: null,
     genres: item.genres ?? [],
     cast: null,
     director: null,

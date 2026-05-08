@@ -20,6 +20,10 @@ export interface FilterState {
   minRuntime: number;
   maxRuntime: number;
   language: string;
+  country: string;        // origin country (ISO 3166-1)
+  certification: string;  // e.g. "PG-13", "TV-MA"
+  decade: string;         // "1990s", "2000s", etc — overrides year if set
+  keywords: string;       // free-text TMDB keywords (comma-sep)
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -30,6 +34,10 @@ const DEFAULT_FILTERS: FilterState = {
   minRuntime: 0,
   maxRuntime: 400,
   language: "",
+  country: "",
+  certification: "",
+  decade: "",
+  keywords: "",
 };
 
 const SORT_OPTIONS_MOVIE = [
@@ -67,6 +75,66 @@ const LANGUAGES = [
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = ["", ...Array.from({ length: 60 }, (_, i) => String(CURRENT_YEAR - i))];
+
+const COUNTRIES = [
+  { value: "", label: "Any country" },
+  { value: "US", label: "United States" },
+  { value: "GB", label: "United Kingdom" },
+  { value: "JP", label: "Japan" },
+  { value: "KR", label: "South Korea" },
+  { value: "FR", label: "France" },
+  { value: "DE", label: "Germany" },
+  { value: "ES", label: "Spain" },
+  { value: "IT", label: "Italy" },
+  { value: "IN", label: "India" },
+  { value: "CN", label: "China" },
+  { value: "BR", label: "Brazil" },
+  { value: "MX", label: "Mexico" },
+  { value: "CA", label: "Canada" },
+  { value: "AU", label: "Australia" },
+  { value: "RU", label: "Russia" },
+  { value: "TR", label: "Turkey" },
+  { value: "SE", label: "Sweden" },
+  { value: "DK", label: "Denmark" },
+];
+
+const CERTIFICATIONS_MOVIE = [
+  { value: "", label: "Any rating" },
+  { value: "G", label: "G" },
+  { value: "PG", label: "PG" },
+  { value: "PG-13", label: "PG-13" },
+  { value: "R", label: "R" },
+  { value: "NC-17", label: "NC-17" },
+];
+const CERTIFICATIONS_TV = [
+  { value: "", label: "Any rating" },
+  { value: "TV-Y", label: "TV-Y" },
+  { value: "TV-Y7", label: "TV-Y7" },
+  { value: "TV-G", label: "TV-G" },
+  { value: "TV-PG", label: "TV-PG" },
+  { value: "TV-14", label: "TV-14" },
+  { value: "TV-MA", label: "TV-MA" },
+];
+
+const DECADES = [
+  { value: "", label: "Any decade" },
+  { value: "2020s", label: "2020s" },
+  { value: "2010s", label: "2010s" },
+  { value: "2000s", label: "2000s" },
+  { value: "1990s", label: "1990s" },
+  { value: "1980s", label: "1980s" },
+  { value: "1970s", label: "1970s" },
+  { value: "1960s", label: "1960s" },
+  { value: "1950s", label: "1950s" },
+  { value: "1940s", label: "1940s" },
+];
+
+export function decadeRange(decade: string): { from?: string; to?: string } {
+  const m = decade.match(/^(\d{4})s$/);
+  if (!m) return {};
+  const start = Number(m[1]);
+  return { from: `${start}-01-01`, to: `${start + 9}-12-31` };
+}
 
 interface FilterBarProps {
   kind: "movie" | "tv";
@@ -127,6 +195,35 @@ export function FilterBar({ kind, value, onChange }: FilterBarProps) {
         key: "lang",
         label: l?.label || value.language,
         clear: () => onChange({ ...value, language: "" }),
+      });
+    }
+    if (value.country) {
+      const c = COUNTRIES.find((x) => x.value === value.country);
+      chips.push({
+        key: "country",
+        label: `From ${c?.label || value.country}`,
+        clear: () => onChange({ ...value, country: "" }),
+      });
+    }
+    if (value.certification) {
+      chips.push({
+        key: "cert",
+        label: value.certification,
+        clear: () => onChange({ ...value, certification: "" }),
+      });
+    }
+    if (value.decade) {
+      chips.push({
+        key: "decade",
+        label: value.decade,
+        clear: () => onChange({ ...value, decade: "" }),
+      });
+    }
+    if (value.keywords) {
+      chips.push({
+        key: "kw",
+        label: `kw: ${value.keywords}`,
+        clear: () => onChange({ ...value, keywords: "" }),
       });
     }
     return chips;
@@ -294,6 +391,84 @@ export function FilterBar({ kind, value, onChange }: FilterBarProps) {
                     step={0.5}
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-foreground/60 mb-3 block">
+                    Country
+                  </label>
+                  <Select
+                    value={value.country}
+                    onValueChange={(v) => onChange({ ...value, country: v })}
+                  >
+                    <SelectTrigger className="bg-white/[0.04] border-white/10">
+                      <SelectValue placeholder="Any country" />
+                    </SelectTrigger>
+                    <SelectContent className="glass max-h-72">
+                      {COUNTRIES.map((c) => (
+                        <SelectItem key={c.value || "any"} value={c.value}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-foreground/60 mb-3 block">
+                    Decade
+                  </label>
+                  <Select
+                    value={value.decade}
+                    onValueChange={(v) => onChange({ ...value, decade: v })}
+                  >
+                    <SelectTrigger className="bg-white/[0.04] border-white/10">
+                      <SelectValue placeholder="Any decade" />
+                    </SelectTrigger>
+                    <SelectContent className="glass">
+                      {DECADES.map((d) => (
+                        <SelectItem key={d.value || "any"} value={d.value}>
+                          {d.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-foreground/60 mb-3 block">
+                    Certification
+                  </label>
+                  <Select
+                    value={value.certification}
+                    onValueChange={(v) => onChange({ ...value, certification: v })}
+                  >
+                    <SelectTrigger className="bg-white/[0.04] border-white/10">
+                      <SelectValue placeholder="Any rating" />
+                    </SelectTrigger>
+                    <SelectContent className="glass">
+                      {(kind === "movie" ? CERTIFICATIONS_MOVIE : CERTIFICATIONS_TV).map((c) => (
+                        <SelectItem key={c.value || "any"} value={c.value}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-foreground/60 mb-3 block">
+                  Keywords <span className="font-normal lowercase text-foreground/40">(comma-separated, e.g. heist, time-travel)</span>
+                </label>
+                <input
+                  type="text"
+                  value={value.keywords}
+                  onChange={(e) => onChange({ ...value, keywords: e.target.value })}
+                  placeholder="time-travel, dystopia, heist"
+                  className="w-full px-3 py-2 rounded-md bg-white/[0.04] border border-white/10 hover:bg-white/[0.06] focus:bg-white/[0.06] focus:border-primary/40 outline-none text-sm"
+                />
               </div>
 
               {kind === "movie" && (
