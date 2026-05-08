@@ -4,9 +4,27 @@
 // to TMDB/OMDB *directly* (using VITE_TMDB_API_KEY at build time) so a
 // statically deployed build still gets real data.
 import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 
 const STALE_LONG = 30 * 60 * 1000;
 const STALE_SHORT = 5 * 60 * 1000;
+
+// Eagerly fetch detail data into the React Query cache. Used by ContentCard's
+// onMouseEnter so by the time the user clicks, the detail page hydrates from
+// cache instead of waiting on a network round-trip. Cheap fire-and-forget.
+export function prefetchContentDetail(
+  type: "movie" | "series" | undefined,
+  tmdbId: number | string | undefined,
+): void {
+  if (!type || tmdbId === undefined || tmdbId === null) return;
+  const path = type === "series" ? "series" : "movie";
+  const idStr = String(tmdbId);
+  queryClient.prefetchQuery({
+    queryKey: [`/api/tmdb/${path}/${idStr}`],
+    queryFn: () => jsonOrNull(`/api/tmdb/${path}/${idStr}`),
+    staleTime: STALE_LONG,
+  });
+}
 
 export interface CatalogItem {
   id: string;

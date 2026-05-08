@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { parseCatalogId, prefetchContentDetail } from "@/lib/api";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
 interface ContentCardProps {
@@ -105,7 +106,11 @@ export function ContentCard({
           const isArchive = typeof content.id === "string" && content.id.startsWith("archive-");
           setLocation(isArchive ? `/free/${content.id}` : `/${content.type}/${content.id}`);
         }}
-        onMouseEnter={() => setHovering(true)}
+        onMouseEnter={() => {
+          setHovering(true);
+          const parsed = parseCatalogId(content.id);
+          if (parsed) prefetchContentDetail(parsed.type, parsed.tmdbId);
+        }}
         onMouseLeave={() => setHovering(false)}
         whileHover={{ y: -6, scale: 1.04 }}
         transition={{ type: "spring", stiffness: 260, damping: 22 }}

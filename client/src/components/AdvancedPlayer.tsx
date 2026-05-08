@@ -133,6 +133,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
     const [seekPreview, setSeekPreview] = useState<{ x: number; t: number } | null>(null);
     const [showCenterIcon, setShowCenterIcon] = useState<"play" | "pause" | "fwd" | "back" | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [showStats, setShowStats] = useState(false);
     const [brightness, setBrightness] = useState(100);
     const [zoom, setZoom] = useState(100);
@@ -154,6 +155,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
 
       seekedToInitial.current = false;
       setIsLoading(true);
+      setLoadError(null);
 
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -162,12 +164,51 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
 
       const isHls = src.includes(".m3u8");
 
+      // Crossorigin policy. Setting `crossOrigin="anonymous"` on the <video>
+      // element forces the browser to enforce CORS on every fetched byte —
+      // that's correct for hls.js (which fetches segments via fetch()), but
+      // breaks playback of progressive/native sources that don't expose CORS
+      // headers (most public video hosts, archive.org CDN redirects, etc.).
+      // We only opt-in when a path needs CORS-correct pixel access, otherwise
+      // playback would silently fail with no error visible to the user.
       if (isHls && Hls.isSupported()) {
+        video.crossOrigin = "anonymous";
+      } else {
+        video.removeAttribute("crossorigin");
+      }
+
+      if (isHls && Hls.isSupported()) {
+        // YouTube-style start-fast / stay-smooth tuning. Tiny initial buffer for
+        // sub-second time-to-first-frame, then a generous sustain buffer so we
+        // tolerate transient bandwidth dips without stalling. ABR drives quality
+        // automatically and we let it pick the best level it can sustain.
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          backBufferLength: 90,
-          maxBufferLength: 60,
+          backBufferLength: 60,
+          // First fragments: load fast, switch quickly when bandwidth allows.
+          maxBufferLength: 30,
+          maxBufferSize: 60 * 1000 * 1000, // 60 MB — comfortable for 4K
+          maxMaxBufferLength: 600,
+          // Audio buffer slightly ahead of video so swaps are seamless.
+          maxBufferHole: 0.5,
+          highBufferWatchdogPeriod: 2,
+          nudgeOffset: 0.1,
+          nudgeMaxRetry: 5,
+          // ABR: start at the quality the network can actually carry. -1 = auto.
+          startLevel: -1,
+          capLevelToPlayerSize: true,
+          abrEwmaDefaultEstimate: 1_500_000,
+          abrEwmaFastLive: 3,
+          abrEwmaSlowLive: 9,
+          abrEwmaFastVoD: 3,
+          abrEwmaSlowVoD: 9,
+          abrBandWidthFactor: 0.95,
+          abrBandWidthUpFactor: 0.7,
+          // Recovery
+          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingMaxRetry: 4,
         });
         hlsRef.current = hls;
         hls.loadSource(src);
@@ -188,12 +229,28 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
             }
           }
         });
+        // Resilient error recovery — instead of giving up on the first fatal
+        // event, retry the most appropriate strategy (network → reload, media
+        // → recover, otherwise → destroy + reload).
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) console.error("[player] HLS fatal", data);
+          if (!data.fatal) return;
+          console.warn("[player] HLS recoverable error", data.type, data.details);
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            hls.startLoad();
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            hls.recoverMediaError();
+          } else {
+            try {
+              hls.destroy();
+            } catch {/* noop */}
+          }
         });
       } else if (isHls && video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Native Safari HLS — let the browser handle ABR.
         video.src = src;
       } else {
+        // Progressive (mp4 / webm) — preload aggressively for fast start.
+        video.preload = "auto";
         video.src = src;
       }
 
@@ -244,10 +301,29 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
           });
         }
       };
-      const onPlay = () => setIsPlaying(true);
+      const onPlay = () => {
+        setIsPlaying(true);
+        setLoadError(null);
+      };
       const onPause = () => setIsPlaying(false);
       const onWaiting = () => setIsLoading(true);
-      const onPlaying = () => setIsLoading(false);
+      const onPlaying = () => {
+        setIsLoading(false);
+        setLoadError(null);
+      };
+      const onError = () => {
+        const err = video.error;
+        if (!err) return;
+        const map: Record<number, string> = {
+          1: "Playback aborted",
+          2: "Network error — check your connection",
+          3: "Decode error — this format isn't supported",
+          4: "This stream isn't supported by your browser",
+        };
+        setLoadError(map[err.code] || "Couldn't play this stream");
+        setIsLoading(false);
+        console.warn("[player] media error", err.code, err.message);
+      };
       const onEndedEvt = () => {
         setIsPlaying(false);
         onEnded?.();
@@ -263,6 +339,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
       video.addEventListener("pause", onPause);
       video.addEventListener("waiting", onWaiting);
       video.addEventListener("playing", onPlaying);
+      video.addEventListener("error", onError);
       video.addEventListener("ended", onEndedEvt);
       video.addEventListener("volumechange", onVolume);
       return () => {
@@ -273,6 +350,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
         video.removeEventListener("pause", onPause);
         video.removeEventListener("waiting", onWaiting);
         video.removeEventListener("playing", onPlaying);
+        video.removeEventListener("error", onError);
         video.removeEventListener("ended", onEndedEvt);
         video.removeEventListener("volumechange", onVolume);
       };
@@ -618,6 +696,44 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
       [levels],
     );
 
+    // Pretty quality label — shows real marketing names (4K, 1440p, 1080p, ...)
+    // and an HDR / Dolby badge when the manifest's video range or codec hints
+    // at HDR.
+    const levelRange = (l: { _attrs?: Array<Record<string, string>>; attrs?: Record<string, string> }): string => {
+      const merged = (l._attrs || []).reduce<Record<string, string>>(
+        (acc, cur) => ({ ...acc, ...cur }),
+        l.attrs || {},
+      );
+      return (merged["VIDEO-RANGE"] || "").toUpperCase();
+    };
+    const qualityLabel = (level: { height?: number; bitrate?: number; videoCodec?: string; _attrs?: Array<Record<string, string>>; attrs?: Record<string, string> }): string => {
+      const h = level.height || 0;
+      let base = "";
+      if (h >= 2160) base = "4K Ultra HD";
+      else if (h >= 1440) base = "1440p QHD";
+      else if (h >= 1080) base = "1080p Full HD";
+      else if (h >= 720) base = "720p HD";
+      else if (h >= 480) base = "480p";
+      else if (h >= 360) base = "360p";
+      else if (h > 0) base = `${h}p`;
+      else if (level.bitrate) base = `${Math.round(level.bitrate / 1000)}kbps`;
+      else base = "Source";
+      const codec = (level.videoCodec || "").toLowerCase();
+      const range = levelRange(level);
+      const isDolby = /dvh1|dvhe/.test(codec) || range === "DV";
+      const isHdr = /hev1|hvc1/.test(codec) && (range === "PQ" || range === "HLG" || range === "HDR10");
+      if (isDolby) return `${base} · Dolby Vision`;
+      if (isHdr) return `${base} · HDR`;
+      return base;
+    };
+
+    const hasHdr = useMemo(() =>
+      sortedLevels.some((l) => {
+        const r = levelRange(l as unknown as { _attrs?: Array<Record<string, string>>; attrs?: Record<string, string> });
+        return r === "PQ" || r === "HLG" || r === "HDR10" || r === "DV";
+      }),
+    [sortedLevels]);
+
     const videoFilter = useMemo(() => {
       const filters: string[] = [];
       if (brightness !== 100) filters.push(`brightness(${brightness}%)`);
@@ -719,7 +835,6 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
           style={{ filter: videoFilter, transform: videoTransform }}
           poster={poster || undefined}
           playsInline
-          crossOrigin="anonymous"
           onClick={togglePlay}
           onDoubleClick={(e) => {
             e.preventDefault();
@@ -741,9 +856,37 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
         </video>
 
         {/* Loading spinner */}
-        {isLoading && (
+        {isLoading && !loadError && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-12 h-12 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {/* Playback error overlay with retry */}
+        {loadError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/85">
+            <div className="max-w-md text-center px-6">
+              <div className="text-amber-400 text-sm font-semibold mb-2 uppercase tracking-wide">Playback issue</div>
+              <div className="text-white text-base mb-4">{loadError}</div>
+              <Button
+                onClick={() => {
+                  const v = videoRef.current;
+                  if (!v) return;
+                  setLoadError(null);
+                  setIsLoading(true);
+                  if (hlsRef.current) {
+                    try { hlsRef.current.startLoad(); } catch { /* noop */ }
+                  } else {
+                    v.load();
+                  }
+                  v.play().catch(() => {/* user can retry */});
+                }}
+                className="bg-primary text-primary-foreground"
+                data-testid="player-retry"
+              >
+                Retry
+              </Button>
+            </div>
           </div>
         )}
 
@@ -799,7 +942,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
         <div
           className={cn(
             "absolute top-0 left-0 right-0 px-4 md:px-6 py-4 bg-gradient-to-b from-black/90 to-transparent transition-opacity duration-300 flex items-center gap-3",
-            showControls ? "opacity-100" : "opacity-0",
+            showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
         >
           {onBack && (
@@ -814,8 +957,25 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
             </Button>
           )}
           {title && (
-            <div className="text-white text-sm md:text-base font-medium truncate">
-              {title}
+            <div className="text-white text-sm md:text-base font-medium truncate flex items-center gap-2 min-w-0">
+              <span className="truncate">{title}</span>
+              {currentLevel >= 0 && levels[currentLevel]?.height && levels[currentLevel].height >= 2160 && (
+                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                  4K
+                </span>
+              )}
+              {hasHdr && (
+                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/40">
+                  HDR
+                </span>
+              )}
+            </div>
+          )}
+          <div className="ml-auto" />
+          {downloadKbps > 0 && showStats && (
+            <div className="hidden md:flex items-center gap-1 text-[11px] text-white/70 px-2 py-1 rounded-md bg-white/[0.06] border border-white/10">
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              {(downloadKbps / 1000).toFixed(1)} Mbps
             </div>
           )}
         </div>
@@ -824,7 +984,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
         <div
           className={cn(
             "absolute bottom-0 left-0 right-0 px-3 md:px-6 pb-3 md:pb-4 pt-12 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-opacity duration-300",
-            showControls ? "opacity-100" : "opacity-0",
+            showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
         >
           {/* Scrub bar */}
@@ -1135,7 +1295,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
                         onClick={() => changeQuality(l.index)}
                         className={currentLevel === l.index ? "text-primary" : ""}
                       >
-                        {l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)}kbps`}
+                        {qualityLabel(l)}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
