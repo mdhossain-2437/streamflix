@@ -25,7 +25,7 @@ import Hls, { type Level } from "hls.js";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, ChevronLeft, ChevronRight,
   PictureInPicture2, Settings2, Subtitles, Gauge, Tv, RotateCcw, FastForward,
-  Camera, Repeat, Activity, Sun, Palette, ZoomIn,
+  Camera, Repeat, Activity, Sun, Palette, ZoomIn, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -65,6 +65,7 @@ export interface AdvancedPlayerProps {
   onProgress?: (currentSeconds: number, durationSeconds: number) => void;
   onEnded?: () => void;
   onBack?: () => void;
+  onDownload?: () => void;
   className?: string;
   autoplay?: boolean;
   muted?: boolean;
@@ -102,6 +103,7 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
       onProgress,
       onEnded,
       onBack,
+      onDownload,
       className,
       autoplay = true,
       muted = false,
@@ -1161,6 +1163,19 @@ export const AdvancedPlayer = forwardRef<AdvancedPlayerHandle, AdvancedPlayerPro
               >
                 <PictureInPicture2 className="w-5 h-5" />
               </Button>
+
+              {onDownload && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onDownload}
+                  className="text-white hover:bg-white/10 h-9 w-9 hidden md:inline-flex"
+                  data-testid="player-download"
+                  title="Download"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+              )}
 
               <Button
                 variant="ghost"

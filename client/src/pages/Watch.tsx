@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { parseCatalogId, useArchiveItem, useContentDetail } from "@/lib/api";
+import { DownloadDialog } from "@/components/DownloadDialog";
 
 interface ProgressRecord {
   contentId: string;
@@ -143,6 +144,8 @@ export default function Watch() {
 
   // Wait until we've fetched the saved progress before mounting the player so
   // the resume offset is honored on first render.
+  const [downloadOpen, setDownloadOpen] = useState(false);
+
   if (resumeSeconds === null) {
     return (
       <div className="fixed inset-0 bg-black grid place-items-center">
@@ -169,7 +172,16 @@ export default function Watch() {
           else if (content) setLocation(`/${content.type}/${id}`);
           else setLocation("/");
         }}
+        onDownload={() => setDownloadOpen(true)}
         className="w-full h-full"
+      />
+      <DownloadDialog
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        source={archiveSrc || resolvedSrc}
+        title={playerTitle || "Untitled"}
+        year={isArchive ? archive?.item?.year : content?.year}
+        kind={isArchive ? "movie" : (parsed?.type === "series" ? "series" : "movie")}
       />
     </div>
   );

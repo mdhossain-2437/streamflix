@@ -3,13 +3,14 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Play, Plus, Check, ChevronLeft, ThumbsUp, Share2, Star, Clock, Award,
-  Globe, Languages, DollarSign,
+  Globe, Languages, DollarSign, Download,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { ContentCard } from "@/components/ContentCard";
 import { Footer } from "@/components/Footer";
 import { AiInsightPanel } from "@/components/AiInsightPanel";
+import { DownloadDialog } from "@/components/DownloadDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,6 +48,7 @@ export default function ContentDetail() {
   );
 
   const [seasonIdx, setSeasonIdx] = useState<number>(1);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   useEffect(() => {
     if (content?.type === "series" && content.seasonsList && content.seasonsList.length > 0) {
       // Default to season 1 if it exists, otherwise the first numbered season.
@@ -343,6 +345,17 @@ export default function ContentDetail() {
                   aria-label="Like"
                 >
                   <ThumbsUp className="w-5 h-5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-12 w-12 rounded-full border border-white/20 bg-white/5 hover:bg-white/15"
+                  aria-label="Download"
+                  onClick={() => setDownloadOpen(true)}
+                  data-testid="button-download"
+                  title="Download"
+                >
+                  <Download className="w-5 h-5" />
                 </Button>
                 <Button
                   size="icon"
@@ -726,6 +739,15 @@ export default function ContentDetail() {
       </div>
 
       <Footer />
+
+      <DownloadDialog
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        source={null}
+        title={content.title}
+        year={content.year}
+        kind={content.type === "series" ? "series" : "movie"}
+      />
     </div>
   );
 }
