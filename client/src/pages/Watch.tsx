@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { parseCatalogId, useArchiveItem, useContentDetail } from "@/lib/api";
 import { DownloadDialog } from "@/components/DownloadDialog";
+import { getLibraryItem, type MyLibraryItem } from "@/lib/myLibrary";
 
 interface ProgressRecord {
   contentId: string;
@@ -58,14 +59,25 @@ function syntheticChapters(durationMin: number | null): ChapterMarker[] {
 export default function Watch() {
   const [, params] = useRoute("/watch/:id");
   const [, archiveParams] = useRoute("/free/:id");
-  const id = params?.id || archiveParams?.id;
-  const isArchive = !!archiveParams?.id || (id?.startsWith("archive-") ?? false);
+  const [, libParams] = useRoute("/library/watch/:id");
+  const id = params?.id || archiveParams?.id || libParams?.id;
+  const isLib = !!libParams?.id || (id?.startsWith("lib-") ?? false);
+  const isArchive = !isLib && (!!archiveParams?.id || (id?.startsWith("archive-") ?? false));
 
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const parsed = !isArchive ? parseCatalogId(id) : null;
+  const parsed = !isArchive && !isLib ? parseCatalogId(id) : null;
   const { data: content } = useContentDetail(parsed?.type, parsed?.tmdbId);
   const { data: archive } = useArchiveItem(isArchive ? id : undefined);
+
+  const [libItem, setLibItem] = useState<MyLibraryItem | null>(null);
+  useEffect(() => {
+    if (isLib && id) {
+      void getLibraryItem(id).then((item) => setLibItem(item ?? null));
+    } else {
+      setLibItem(null);
+    }
+  }, [isLib, id]);
 
   // Restore last position
   const { data: lastProgress } = useQuery<ProgressRecord | null>({
@@ -101,6 +113,8 @@ export default function Watch() {
     return mp4?.url || archive.sources[0]?.url || null;
   }, [isArchive, archive]);
 
+  const libSrc = isLib ? libItem?.videoUrl ?? null : null;
+
   const archiveSubtitles: SubtitleTrack[] = useMemo(() => {
     if (!isArchive || !archive?.subtitles?.length) return [];
     return archive.subtitles.map((s, i) => ({
@@ -111,18 +125,33 @@ export default function Watch() {
     }));
   }, [isArchive, archive]);
 
-  const resolvedSrc = isArchive ? (archiveSrc || fallbackSrc) : fallbackSrc;
-  const subtitles = isArchive ? archiveSubtitles : SAMPLE_SUBTITLES;
-  const playerTitle = isArchive
-    ? archive?.item?.title
-    : content?.title;
-  const playerPoster = isArchive
-    ? archive?.item?.backdropUrl ?? archive?.item?.posterUrl ?? undefined
-    : (content?.backdropUrl ?? undefined);
+  const resolvedSrc = isLib
+    ? libSrc
+    : isArchive
+      ? archiveSrc || fallbackSrc
+      : fallbackSrc;
+  const subtitles = isLib ? [] : isArchive ? archiveSubtitles : SAMPLE_SUBTITLES;
+  const playerTitle = isLib
+    ? libItem?.title
+    : isArchive
+      ? archive?.item?.title
+      : content?.title;
+  const playerPoster = isLib
+    ? libItem?.coverUrl ?? undefined
+    : isArchive
+      ? archive?.item?.backdropUrl ?? archive?.item?.posterUrl ?? undefined
+      : content?.backdropUrl ?? undefined;
 
   const chapters = useMemo(
-    () => syntheticChapters(isArchive ? archive?.item?.durationMin ?? null : content?.durationMin ?? null),
-    [isArchive, archive, content],
+    () =>
+      syntheticChapters(
+        isLib
+          ? null
+          : isArchive
+            ? archive?.item?.durationMin ?? null
+            : content?.durationMin ?? null,
+      ),
+    [isLib, isArchive, archive, content],
   );
 
   const progressMutation = useMutation({
@@ -152,7 +181,7 @@ export default function Watch() {
   // the resume offset is honored on first render.
   const [downloadOpen, setDownloadOpen] = useState(false);
 
-  if (resumeSeconds === null) {
+  if (resumeSeconds === null || (isLib && !libItem) || !resolvedSrc) {
     return (
       <div className="fixed inset-0 bg-black grid place-items-center">
         <div className="font-display text-3xl text-primary animate-glow-pulse">
@@ -174,7 +203,8 @@ export default function Watch() {
         autoplay
         onProgress={(cur, dur) => progressMutation.mutate({ progressSeconds: cur, durationSeconds: dur })}
         onBack={() => {
-          if (isArchive) setLocation("/free");
+          if (isLib) setLocation("/library");
+          else if (isArchive) setLocation("/free");
           else if (content) setLocation(`/${content.type}/${id}`);
           else setLocation("/");
         }}
@@ -184,10 +214,10 @@ export default function Watch() {
       <DownloadDialog
         open={downloadOpen}
         onClose={() => setDownloadOpen(false)}
-        source={archiveSrc || resolvedSrc}
+        source={libSrc || archiveSrc || resolvedSrc}
         title={playerTitle || "Untitled"}
-        year={isArchive ? archive?.item?.year : content?.year}
-        kind={isArchive ? "movie" : (parsed?.type === "series" ? "series" : "movie")}
+        year={isLib ? libItem?.year : isArchive ? archive?.item?.year : content?.year}
+        kind={isLib ? (libItem?.kind === "series" ? "series" : "movie") : isArchive ? "movie" : (parsed?.type === "series" ? "series" : "movie")}
       />
     </div>
   );

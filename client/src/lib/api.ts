@@ -403,6 +403,44 @@ export function useArchiveItem(idOrIdentifier: string | undefined) {
   });
 }
 
+export interface ArchiveCuratedRow {
+  id: string;
+  label: string;
+  description: string;
+  query: string;
+  items: ArchiveItem[];
+  numFound: number;
+}
+
+export interface ArchiveCuratedResponse {
+  rows: ArchiveCuratedRow[];
+}
+
+export function useArchiveCurated(params: { limit?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  return useQuery<ArchiveCuratedResponse | null>({
+    queryKey: ["/api/archive/curated", params],
+    queryFn: () => jsonOrNull<ArchiveCuratedResponse>(`/api/archive/curated?${qs.toString()}`),
+    staleTime: STALE_LONG,
+  });
+}
+
+export function useArchiveRow(rowId: string | undefined, params: { limit?: number; page?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.page) qs.set("page", String(params.page));
+  return useQuery<(ArchiveCuratedRow & ArchiveListResponse) | null>({
+    queryKey: [`/api/archive/row/${rowId}`, params],
+    queryFn: () =>
+      rowId
+        ? jsonOrNull<ArchiveCuratedRow & ArchiveListResponse>(`/api/archive/row/${rowId}?${qs.toString()}`)
+        : Promise.resolve(null),
+    staleTime: STALE_LONG,
+    enabled: !!rowId,
+  });
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // AI hooks (Gemini / OpenAI). Auto-disabled when no provider is configured.
 // ────────────────────────────────────────────────────────────────────────

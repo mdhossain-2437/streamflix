@@ -293,6 +293,93 @@ async function fetchItemDetail(identifier: string): Promise<{
 const FEATURED_QUERY =
   "collection:(feature_films) AND mediatype:(movies) AND format:(h.264) AND -collection:(test_videos)";
 
+// Curated rows surfaced on the Free / Public-Domain page. Each entry maps to
+// a Solr query against archive.org. We expand far beyond the original
+// `feature_films` collection: classic Westerns, silent cinema, public-domain
+// animation, Prelinger Archives industrial films, NASA video archive,
+// classic horror, sci-fi shorts, classic TV, and the Library of Congress
+// National Screening Room. All are bona-fide public-domain or
+// federally-produced (US-government works are public domain by default),
+// so distribution is fully legal.
+export interface CuratedRow {
+  id: string;
+  label: string;
+  description: string;
+  query: string;
+  /** Sort field for this row's archive.org search; defaults to downloads desc. */
+  sort?: string;
+}
+
+export const CURATED_ROWS: CuratedRow[] = [
+  {
+    id: "feature-films",
+    label: "Public-Domain Feature Films",
+    description: "Full-length classics, all rights expired or freely licensed.",
+    query: "collection:(feature_films) AND mediatype:(movies) AND format:(h.264)",
+  },
+  {
+    id: "classic-westerns",
+    label: "Classic Westerns",
+    description: "John Wayne, Roy Rogers, and the rest of the silver-screen frontier.",
+    query: "collection:(classic_western) AND mediatype:(movies)",
+  },
+  {
+    id: "silent-cinema",
+    label: "Silent Cinema",
+    description: "Charlie Chaplin, Buster Keaton, Lillian Gish, Méliès, Murnau.",
+    query:
+      "(collection:(silent_films) OR collection:(silent_hall_of_fame) OR collection:(silent_features)) AND mediatype:(movies)",
+  },
+  {
+    id: "classic-animation",
+    label: "Classic Animation",
+    description: "Pre-1955 Looney Tunes, Betty Boop, Popeye, Fleischer Studios.",
+    query: "collection:(classic_cartoons) AND mediatype:(movies)",
+  },
+  {
+    id: "classic-horror",
+    label: "Classic Horror",
+    description: "Vintage chillers from the golden age of public-domain horror.",
+    query: "collection:(classic_horror) AND mediatype:(movies)",
+  },
+  {
+    id: "sci-fi-shorts",
+    label: "Sci-Fi & Fantasy Shorts",
+    description: "Atomic-age sci-fi serials, B-movie matinees, fantasy reels.",
+    query: "collection:(sf_short_films) AND mediatype:(movies)",
+  },
+  {
+    id: "film-noir",
+    label: "Film Noir",
+    description: "Smoke-filled rooms, double-crosses, and venetian blinds.",
+    query: "collection:(film_noir) AND mediatype:(movies)",
+  },
+  {
+    id: "prelinger-archives",
+    label: "Prelinger Archives",
+    description: "Mid-century industrial, advertising, and educational films.",
+    query: "collection:(prelinger) AND mediatype:(movies)",
+  },
+  {
+    id: "nasa-archive",
+    label: "NASA Film Archive",
+    description: "Mission footage, agency documentaries, and vintage promo reels.",
+    query: "(collection:(nasa) OR collection:(nasa_techdoc_videos)) AND mediatype:(movies)",
+  },
+  {
+    id: "classic-tv",
+    label: "Classic TV",
+    description: "Public-domain Twilight Zone era TV — Lone Ranger, Beverly Hillbillies pilot, etc.",
+    query: "collection:(classic_tv) AND mediatype:(movies)",
+  },
+  {
+    id: "library-of-congress",
+    label: "Library of Congress",
+    description: "Curated entries from the LoC's National Screening Room.",
+    query: "collection:(libraryofcongress) AND mediatype:(movies)",
+  },
+];
+
 export function registerArchiveRoutes(app: Express): void {
   app.get("/api/archive/status", (_req: Request, res: Response) => {
     res.json({ configured: true, source: "archive.org" });
@@ -306,6 +393,43 @@ export function registerArchiveRoutes(app: Express): void {
       res.json(out);
     } catch (e) {
       console.error("[archive] featured", e);
+      res.status(502).json({ message: "archive.org unavailable" });
+    }
+  });
+
+  // Returns metadata for every curated row. Each row's items are fetched
+  // server-side in parallel and returned in a single response so the Free
+  // page can render N rows without N round-trips.
+  app.get("/api/archive/curated", async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(String(req.query.limit ?? "16"), 10) || 16, 30);
+      const rows = await Promise.all(
+        CURATED_ROWS.map(async (row) => {
+          try {
+            const out = await searchArchive(row.query, limit, 1);
+            return { ...row, items: out.items, numFound: out.numFound };
+          } catch {
+            return { ...row, items: [], numFound: 0 };
+          }
+        }),
+      );
+      res.json({ rows });
+    } catch (e) {
+      console.error("[archive] curated", e);
+      res.status(502).json({ message: "archive.org unavailable" });
+    }
+  });
+
+  app.get("/api/archive/row/:id", async (req: Request, res: Response) => {
+    try {
+      const row = CURATED_ROWS.find((r) => r.id === req.params.id);
+      if (!row) return res.status(404).json({ message: "Row not found" });
+      const limit = Math.min(parseInt(String(req.query.limit ?? "30"), 10) || 30, 60);
+      const page = Math.max(parseInt(String(req.query.page ?? "1"), 10) || 1, 1);
+      const out = await searchArchive(row.query, limit, page);
+      res.json({ ...row, ...out });
+    } catch (e) {
+      console.error("[archive] row", e);
       res.status(502).json({ message: "archive.org unavailable" });
     }
   });
@@ -373,7 +497,12 @@ export function registerArchiveRoutes(app: Express): void {
       /(^|\.)archive\.org$/.test(host) ||
       /(^|\.)us\.archive\.org$/.test(host) ||
       /(^|\.)ca\.archive\.org$/.test(host) ||
-      /\.archive\.org$/.test(host);
+      /\.archive\.org$/.test(host) ||
+      /(^|\.)wikimedia\.org$/.test(host) ||
+      /(^|\.)wikipedia\.org$/.test(host) ||
+      /(^|\.)commons\.wikimedia\.org$/.test(host) ||
+      /(^|\.)nasa\.gov$/.test(host) ||
+      /(^|\.)loc\.gov$/.test(host);
     if (!allowed) {
       return res.status(403).json({ message: "Host not allowed" });
     }
