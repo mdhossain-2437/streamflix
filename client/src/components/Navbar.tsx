@@ -34,6 +34,8 @@ export function Navbar() {
     { path: "/", label: "Home" },
     { path: "/movies", label: "Movies" },
     { path: "/series", label: "TV Shows" },
+    { path: "/free", label: "Free" },
+    { path: "/collections", label: "Collections" },
     { path: "/watchlist", label: "My List" },
   ];
 

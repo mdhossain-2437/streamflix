@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AdvancedPlayer, type SubtitleTrack } from "@/components/AdvancedPlayer";
+import {
+  AdvancedPlayer,
+  type ChapterMarker,
+  type SubtitleTrack,
+} from "@/components/AdvancedPlayer";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { parseCatalogId, useContentDetail } from "@/lib/api";
+import { parseCatalogId, useArchiveItem, useContentDetail } from "@/lib/api";
 
 interface ProgressRecord {
   contentId: string;
@@ -32,17 +36,34 @@ const SAMPLE_SUBTITLES: SubtitleTrack[] = [
   },
 ];
 
+// Synthetic chapter markers so HLS demo streams have nav points. Real archive
+// titles are full features without chapter metadata, so we synthesize at
+// 10-minute intervals so the UI demonstrates the markers.
+function syntheticChapters(durationMin: number | null): ChapterMarker[] {
+  const dur = durationMin && durationMin > 10 ? durationMin : 90;
+  const out: ChapterMarker[] = [];
+  for (let i = 0; i < dur; i += 10) {
+    out.push({ start: i * 60, title: i === 0 ? "Opening" : `Chapter ${Math.ceil(i / 10) + 1}` });
+  }
+  return out;
+}
+
 export default function Watch() {
   const [, params] = useRoute("/watch/:id");
+  const [, archiveParams] = useRoute("/free/:id");
+  const id = params?.id || archiveParams?.id;
+  const isArchive = !!archiveParams?.id || (id?.startsWith("archive-") ?? false);
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const parsed = parseCatalogId(params?.id);
+  const parsed = !isArchive ? parseCatalogId(id) : null;
   const { data: content } = useContentDetail(parsed?.type, parsed?.tmdbId);
+  const { data: archive } = useArchiveItem(isArchive ? id : undefined);
 
   // Restore last position
   const { data: lastProgress } = useQuery<ProgressRecord | null>({
-    queryKey: [`/api/viewing-progress/${params?.id}`],
-    enabled: !!params?.id,
+    queryKey: [`/api/viewing-progress/${id}`],
+    enabled: !!id,
     retry: false,
   });
 
@@ -56,20 +77,52 @@ export default function Watch() {
   }, [lastProgress]);
 
   // Pseudo-random source selection so each title gets a stable demo stream.
-  const resolvedSrc =
-    SAMPLE_SOURCES[
-      Math.abs(
-        (params?.id || "")
-          .split("")
-          .reduce((acc, c) => acc + c.charCodeAt(0), 0),
-      ) % SAMPLE_SOURCES.length
-    ];
+  const fallbackSrc = useMemo(
+    () =>
+      SAMPLE_SOURCES[
+        Math.abs(
+          (id || "").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0),
+        ) % SAMPLE_SOURCES.length
+      ],
+    [id],
+  );
+
+  const archiveSrc = useMemo(() => {
+    if (!isArchive || !archive?.sources?.length) return null;
+    // Prefer "best quality" mp4. archive returns sorted by size already.
+    const mp4 = archive.sources.find((s) => /mp4/i.test(s.type));
+    return mp4?.url || archive.sources[0]?.url || null;
+  }, [isArchive, archive]);
+
+  const archiveSubtitles: SubtitleTrack[] = useMemo(() => {
+    if (!isArchive || !archive?.subtitles?.length) return [];
+    return archive.subtitles.map((s, i) => ({
+      src: s.url,
+      srclang: s.srclang,
+      label: s.label,
+      default: i === 0,
+    }));
+  }, [isArchive, archive]);
+
+  const resolvedSrc = isArchive ? (archiveSrc || fallbackSrc) : fallbackSrc;
+  const subtitles = isArchive ? archiveSubtitles : SAMPLE_SUBTITLES;
+  const playerTitle = isArchive
+    ? archive?.item?.title
+    : content?.title;
+  const playerPoster = isArchive
+    ? archive?.item?.backdropUrl ?? archive?.item?.posterUrl ?? undefined
+    : (content?.backdropUrl ?? undefined);
+
+  const chapters = useMemo(
+    () => syntheticChapters(isArchive ? archive?.item?.durationMin ?? null : content?.durationMin ?? null),
+    [isArchive, archive, content],
+  );
 
   const progressMutation = useMutation({
     mutationFn: async (data: { progressSeconds: number; durationSeconds: number }) => {
-      if (!params?.id) return null;
+      if (!id) return null;
       return apiRequest("POST", "/api/viewing-progress", {
-        contentId: params.id,
+        contentId: id,
         progressSeconds: Math.floor(data.progressSeconds),
         durationSeconds: Math.floor(data.durationSeconds || 1),
       });
@@ -104,13 +157,18 @@ export default function Watch() {
     <div className="fixed inset-0 bg-black overflow-hidden">
       <AdvancedPlayer
         src={resolvedSrc}
-        poster={content?.backdropUrl ?? undefined}
-        title={content?.title}
-        subtitles={SAMPLE_SUBTITLES}
+        poster={playerPoster}
+        title={playerTitle}
+        subtitles={subtitles}
+        chapters={chapters}
         initialPositionSeconds={resumeSeconds}
         autoplay
         onProgress={(cur, dur) => progressMutation.mutate({ progressSeconds: cur, durationSeconds: dur })}
-        onBack={() => setLocation(content ? `/${content.type}/${params?.id}` : "/")}
+        onBack={() => {
+          if (isArchive) setLocation("/free");
+          else if (content) setLocation(`/${content.type}/${id}`);
+          else setLocation("/");
+        }}
         className="w-full h-full"
       />
     </div>

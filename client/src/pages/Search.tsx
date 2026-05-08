@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -17,8 +17,9 @@ import { Footer } from "@/components/Footer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useSearch as useApiSearch, useTrending } from "@/lib/api";
-import type { CatalogItem, PersonHit } from "@/lib/api";
+import { useSearch as useApiSearch, useTrending, useAiStatus, aiSemanticSearch, useDiscover } from "@/lib/api";
+import type { CatalogItem, PersonHit, SemanticSearchResult } from "@/lib/api";
+import { Sparkles } from "lucide-react";
 import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { Content } from "@shared/schema";
 
@@ -118,6 +119,53 @@ export default function Search() {
   const trendingContent: Content[] = (trendingData?.results || [])
     .slice(0, 12)
     .map(tmdbToContent);
+
+  const { data: aiStatus } = useAiStatus();
+  const [aiResult, setAiResult] = useState<SemanticSearchResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const semanticParams = useMemo(() => {
+    if (!aiResult) return null;
+    const out: Record<string, string> = {
+      kind: aiResult.kind === "tv" ? "tv" : "movie",
+      sort: aiResult.sort ? `${aiResult.sort}.desc` : "popularity.desc",
+    };
+    if (aiResult.minRating !== undefined) {
+      out.minRating = String(aiResult.minRating * 2);
+    }
+    if (aiResult.language) out.lang = aiResult.language;
+    if (aiResult.yearFrom) {
+      out.fromDate = `${aiResult.yearFrom}-01-01`;
+    }
+    if (aiResult.yearTo) {
+      out.toDate = `${aiResult.yearTo}-12-31`;
+    }
+    return out;
+  }, [aiResult]);
+
+  const { data: semanticData } = useDiscover(semanticParams || {}, !!semanticParams);
+  const semanticResults: Content[] = (semanticData?.results || []).map(tmdbToContent);
+
+  const handleAiSearch = useCallback(async () => {
+    if (!debouncedQuery.trim() || !aiStatus?.configured) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const r = await aiSemanticSearch(debouncedQuery);
+      if (!r) setAiError("AI is unavailable right now.");
+      else setAiResult(r);
+    } catch (e) {
+      setAiError(String(e));
+    } finally {
+      setAiLoading(false);
+    }
+  }, [debouncedQuery, aiStatus?.configured]);
+
+  useEffect(() => {
+    setAiResult(null);
+    setAiError(null);
+  }, [debouncedQuery]);
 
   const handleClear = useCallback(() => {
     setQuery("");
@@ -230,6 +278,32 @@ export default function Search() {
               </AnimatePresence>
             </form>
 
+            {/* AI semantic search trigger */}
+            {aiStatus?.configured && isSearching && (
+              <div className="flex items-center gap-3 max-w-2xl">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                  onClick={handleAiSearch}
+                  disabled={aiLoading}
+                  data-testid="ai-search"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                  {aiLoading ? "Thinking…" : "Ask AI to find this"}
+                </Button>
+                {aiResult?.explanation && (
+                  <p className="text-xs text-muted-foreground italic">
+                    {aiResult.explanation}
+                  </p>
+                )}
+                {aiError && (
+                  <p className="text-xs text-rose-400">{aiError}</p>
+                )}
+              </div>
+            )}
+
             {/* Type filters */}
             {isSearching && (
               <motion.div
@@ -318,9 +392,22 @@ export default function Search() {
                         </div>
                       </section>
                     )}
+                    {semanticResults.length > 0 && (
+                      <section className="space-y-4">
+                        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary/90 flex items-center gap-2">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          AI Suggestions
+                        </h2>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
+                          {semanticResults.slice(0, 12).map((item) => (
+                            <ContentCard key={`ai-${item.id}`} content={item} />
+                          ))}
+                        </div>
+                      </section>
+                    )}
                     {mergedResults.length > 0 && (
                       <section className="space-y-4">
-                        {peopleHits.length > 0 && (
+                        {(peopleHits.length > 0 || semanticResults.length > 0) && (
                           <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground/90">
                             Titles
                           </h2>

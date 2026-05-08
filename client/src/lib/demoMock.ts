@@ -15,9 +15,12 @@ import { queryClient } from "./queryClient";
 
 const TMDB_API_KEY = (import.meta.env as Record<string, string>).VITE_TMDB_API_KEY;
 const OMDB_API_KEY = (import.meta.env as Record<string, string>).VITE_OMDB_API_KEY;
+const GEMINI_API_KEY = (import.meta.env as Record<string, string>).VITE_GEMINI_API_KEY;
+const GEMINI_MODEL = (import.meta.env as Record<string, string>).VITE_GEMINI_MODEL || "gemini-2.0-flash";
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 const OMDB_BASE = "https://www.omdbapi.com";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 const LS_WATCHLIST = "streamflix.watchlist";
 const LS_PROGRESS = "streamflix.progress";
@@ -365,12 +368,26 @@ async function handleTmdbProxy(url: URL): Promise<Response | null> {
       if (sp.get("keyword")) out.with_keywords = sp.get("keyword")!;
       if (sp.get("person")) out.with_people = sp.get("person")!;
       if (sp.get("cast")) out.with_cast = sp.get("cast")!;
+      if (sp.get("network")) out.with_networks = sp.get("network")!;
       if (sp.get("lang")) out.with_original_language = sp.get("lang")!;
       if (sp.get("region")) out.region = sp.get("region")!;
+      if (sp.get("country")) out.with_origin_country = sp.get("country")!;
+      if (sp.get("certification")) {
+        out.certification = sp.get("certification")!;
+        out.certification_country = sp.get("certCountry") || "US";
+      }
       if (sp.get("minRating")) out["vote_average.gte"] = sp.get("minRating")!;
       if (sp.get("minVotes")) out["vote_count.gte"] = sp.get("minVotes")!;
       if (sp.get("minRuntime")) out["with_runtime.gte"] = sp.get("minRuntime")!;
       if (sp.get("maxRuntime")) out["with_runtime.lte"] = sp.get("maxRuntime")!;
+      if (sp.get("fromDate")) {
+        if (kind === "movie") out["primary_release_date.gte"] = sp.get("fromDate")!;
+        else out["first_air_date.gte"] = sp.get("fromDate")!;
+      }
+      if (sp.get("toDate")) {
+        if (kind === "movie") out["primary_release_date.lte"] = sp.get("toDate")!;
+        else out["first_air_date.lte"] = sp.get("toDate")!;
+      }
       if (sp.get("year")) {
         if (kind === "movie") out.primary_release_year = sp.get("year")!;
         else out.first_air_date_year = sp.get("year")!;
@@ -535,6 +552,20 @@ async function handleTmdbProxy(url: URL): Promise<Response | null> {
           rating: e.vote_average ?? null,
         })),
       });
+    }
+
+    const collectionMatch = path.match(/^\/api\/tmdb\/collection\/(\d+)$/);
+    if (collectionMatch) {
+      const data = await tmdbFetch<{
+        id: number; name: string; overview: string;
+        backdrop_path: string | null; poster_path: string | null;
+        parts: Array<{
+          id: number; title: string; overview: string;
+          poster_path: string | null; backdrop_path: string | null;
+          release_date: string; vote_average: number;
+        }>;
+      }>(`/collection/${collectionMatch[1]}`, {});
+      return mockResponse(data);
     }
 
     const personMatch = path.match(/^\/api\/tmdb\/person\/(\d+)$/);
@@ -702,6 +733,346 @@ function handleTmdbMockFallback(url: URL): Response | null {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// archive.org proxy — public-domain feature films, no API key required.
+// ────────────────────────────────────────────────────────────────────────
+const ARCHIVE_SEARCH = "https://archive.org/advancedsearch.php";
+const ARCHIVE_METADATA = "https://archive.org/metadata";
+const ARCHIVE_DOWNLOAD = "https://archive.org/download";
+const ARCHIVE_FEATURED_QUERY =
+  "collection:(feature_films) AND mediatype:(movies) AND format:(h.264) AND -collection:(test_videos)";
+
+interface ArchiveSearchDoc {
+  identifier: string;
+  title?: string;
+  description?: string | string[];
+  creator?: string | string[];
+  year?: string;
+  date?: string;
+  avg_rating?: string | number;
+  subject?: string | string[];
+  runtime?: string;
+}
+
+function archiveDocToItem(doc: ArchiveSearchDoc): Record<string, unknown> {
+  const id = doc.identifier;
+  const desc = Array.isArray(doc.description) ? doc.description[0] : doc.description || "";
+  const subjects = Array.isArray(doc.subject) ? doc.subject : doc.subject ? [doc.subject] : [];
+  const rating = doc.avg_rating !== undefined ? Number(doc.avg_rating) : null;
+  return {
+    id: `archive-${id}`,
+    identifier: id,
+    type: "movie",
+    title: doc.title || id,
+    description: String(desc).replace(/<[^>]*>/g, "").slice(0, 1200),
+    year: doc.year || (doc.date ? String(doc.date).slice(0, 4) : ""),
+    durationMin: null,
+    rating: rating !== null && !isNaN(rating) ? rating : null,
+    genres: subjects.slice(0, 8),
+    posterUrl: `https://archive.org/services/img/${id}`,
+    backdropUrl: `https://archive.org/services/img/${id}`,
+    thumbnailUrl: `https://archive.org/services/img/${id}`,
+    source: "archive",
+    detailsUrl: `https://archive.org/details/${id}`,
+  };
+}
+
+async function archiveSearch(query: string, rows: number, page: number): Promise<Response> {
+  const url =
+    `${ARCHIVE_SEARCH}?` +
+    [
+      `q=${encodeURIComponent(query)}`,
+      `fl[]=identifier`, `fl[]=title`, `fl[]=description`, `fl[]=creator`,
+      `fl[]=year`, `fl[]=date`, `fl[]=avg_rating`, `fl[]=subject`, `fl[]=runtime`,
+      `sort[]=downloads desc`,
+      `rows=${rows}`, `page=${page}`, `output=json`,
+    ].join("&");
+  const res = await fetch(url);
+  if (!res.ok) return mockResponse({ items: [], numFound: 0 }, 502);
+  const data = (await res.json()) as { response?: { docs?: ArchiveSearchDoc[]; numFound?: number } };
+  const docs = data.response?.docs || [];
+  return mockResponse({
+    items: docs.map(archiveDocToItem),
+    numFound: data.response?.numFound || docs.length,
+  });
+}
+
+interface ArchiveFile {
+  name: string;
+  format?: string;
+  size?: string;
+  length?: string;
+  height?: string;
+}
+
+async function archiveItemDetail(identifier: string): Promise<Response> {
+  const res = await fetch(`${ARCHIVE_METADATA}/${identifier}`);
+  if (!res.ok) return mockResponse({ message: "Not found" }, 404);
+  const data = (await res.json()) as {
+    metadata?: ArchiveSearchDoc & { mediatype?: string; licenseurl?: string };
+    files?: ArchiveFile[];
+  };
+  if (!data.metadata) return mockResponse({ message: "Not found" }, 404);
+  const item = archiveDocToItem({ ...data.metadata, identifier });
+  const isVideo = (f: ArchiveFile) => /\.mp4$|\.webm$|\.m4v$|\.ogv$|\.mov$/i.test(f.name);
+  const sources = (data.files || [])
+    .filter(isVideo)
+    .map((f) => {
+      const fmt = (f.format || "").toLowerCase();
+      let label = "Original";
+      if (fmt.includes("h.264 ia")) label = "Auto (h.264)";
+      else if (fmt.includes("h.264")) label = "Standard (h.264)";
+      else if (fmt.includes("512kb")) label = "Mobile (512Kb)";
+      else if (fmt.includes("mpeg4")) label = "MPEG4";
+      else if (fmt.includes("webm")) label = "WebM";
+      else if (f.height) label = `${f.height}p`;
+      return {
+        url: `${ARCHIVE_DOWNLOAD}/${identifier}/${encodeURIComponent(f.name)}`,
+        type: f.name.endsWith(".webm") ? "video/webm" : "video/mp4",
+        label,
+        size: f.size ? parseInt(f.size, 10) : null,
+        duration: null,
+      };
+    })
+    .sort((a, b) => {
+      const score = (l: string): number => {
+        const ll = l.toLowerCase();
+        if (ll.includes("auto")) return 0;
+        if (ll.includes("standard")) return 1;
+        if (ll.includes("mpeg4")) return 2;
+        if (ll.includes("webm")) return 3;
+        return 4;
+      };
+      return score(a.label) - score(b.label);
+    });
+  const subtitles = (data.files || [])
+    .filter((f) => /\.vtt$|\.srt$/i.test(f.name))
+    .map((f) => ({
+      url: `${ARCHIVE_DOWNLOAD}/${identifier}/${encodeURIComponent(f.name)}`,
+      label: f.name.replace(/\.(vtt|srt)$/i, ""),
+      srclang: "en",
+    }));
+  return mockResponse({
+    item,
+    sources,
+    subtitles,
+    embedUrl: `https://archive.org/embed/${identifier}`,
+    licenseUrl: data.metadata.licenseurl || null,
+  });
+}
+
+async function handleArchiveProxy(url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const sp = url.searchParams;
+  const limit = Math.min(parseInt(sp.get("limit") || "24", 10) || 24, 60);
+  const page = Math.max(parseInt(sp.get("page") || "1", 10) || 1, 1);
+
+  if (path === "/api/archive/status") {
+    return mockResponse({ configured: true, source: "archive.org" });
+  }
+  if (path === "/api/archive/featured") {
+    return archiveSearch(ARCHIVE_FEATURED_QUERY, limit, page);
+  }
+  if (path === "/api/archive/search") {
+    const q = sp.get("q") || "";
+    if (!q.trim()) return mockResponse({ items: [], numFound: 0 });
+    return archiveSearch(`(${q}) AND mediatype:(movies)`, limit, page);
+  }
+  const coll = path.match(/^\/api\/archive\/collection\/([^/]+)$/);
+  if (coll) {
+    const slug = coll[1].replace(/[^a-z0-9_-]/gi, "");
+    return archiveSearch(`collection:(${slug}) AND mediatype:(movies)`, limit, page);
+  }
+  const item = path.match(/^\/api\/archive\/item\/(.+)$/);
+  if (item) {
+    const id = decodeURIComponent(item[1]).replace(/^archive-/, "");
+    return archiveItemDetail(id);
+  }
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Gemini AI proxy — used in static demo when VITE_GEMINI_API_KEY is baked in.
+// ────────────────────────────────────────────────────────────────────────
+interface AiChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+function aiParseJsonLoose<T>(text: string, fallback: T): T {
+  if (!text) return fallback;
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "");
+  }
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    const match = cleaned.match(/[\[{][\s\S]*[\]}]/);
+    if (match) {
+      try { return JSON.parse(match[0]) as T; } catch {}
+    }
+    return fallback;
+  }
+}
+
+async function aiCallGemini(
+  messages: AiChatMessage[],
+  opts: { temperature?: number; maxTokens?: number; jsonMode?: boolean } = {},
+): Promise<string> {
+  const systemPrompts = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  const conversation = messages.filter((m) => m.role !== "system");
+  const contents = conversation.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+  const body: Record<string, unknown> = {
+    contents,
+    generationConfig: {
+      temperature: opts.temperature ?? 0.4,
+      maxOutputTokens: opts.maxTokens ?? 1500,
+      ...(opts.jsonMode ? { responseMimeType: "application/json" } : {}),
+    },
+  };
+  if (systemPrompts) body.systemInstruction = { parts: [{ text: systemPrompts }] };
+  const url = `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY!)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Gemini ${res.status}`);
+  const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  return data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+}
+
+async function handleAiProxy(url: URL, init: RequestInit | undefined, method: string): Promise<Response | null> {
+  if (method !== "POST") return null;
+  let body: Record<string, unknown> = {};
+  try { body = JSON.parse((init?.body as string) || "{}"); } catch { /* ignore */ }
+
+  if (url.pathname === "/api/ai/recommend") {
+    const history = (body.history as Array<{ title: string; genres?: string[]; year?: string }>) || [];
+    const candidates = (body.candidates as Array<{ id: string; title: string; genres?: string[]; overview?: string; year?: string }>) || [];
+    const limit = (body.limit as number) || 12;
+    if (candidates.length === 0) return mockResponse({ items: [] });
+    const trimmed = candidates.slice(0, 80);
+    const prompt = [
+      "You are an expert film & TV recommender for a streaming app.",
+      "Given the user's watch history, pick the most relevant items from CANDIDATES.",
+      `Return strict JSON: { "items": [{ "id": string, "reason": string, "score": number }] }`,
+      `Limit to ${limit} items, sorted by score desc (0..1). "reason" = one short sentence.`,
+      "",
+      "WATCH HISTORY:",
+      history.slice(-30).map((h) => `- ${h.title}${h.year ? ` (${h.year})` : ""}${h.genres ? ` [${h.genres.join(", ")}]` : ""}`).join("\n") || "(none yet)",
+      "",
+      "CANDIDATES:",
+      trimmed.map((c) => `- id=${c.id} | ${c.title}${c.year ? ` (${c.year})` : ""}${c.genres ? ` [${c.genres.join(", ")}]` : ""} | ${(c.overview || "").slice(0, 160)}`).join("\n"),
+    ].join("\n");
+    try {
+      const out = await aiCallGemini([
+        { role: "system", content: "You output strict JSON only. No prose, no markdown fences." },
+        { role: "user", content: prompt },
+      ], { temperature: 0.5, jsonMode: true, maxTokens: 1500 });
+      const parsed = aiParseJsonLoose<{ items?: Array<{ id: string; reason: string; score?: number }> }>(out, { items: [] });
+      return mockResponse({ items: (parsed.items || []).slice(0, limit) });
+    } catch (e) {
+      return mockResponse({ message: "AI recommend failed" }, 502);
+    }
+  }
+
+  if (url.pathname === "/api/ai/semantic-search") {
+    const query = body.query as string | undefined;
+    if (!query) return mockResponse({ message: "Missing 'query'" }, 400);
+    try {
+      const out = await aiCallGemini([
+        { role: "system", content: "You output strict JSON only. No prose, no markdown fences." },
+        { role: "user", content: [
+          "Translate the user's natural-language film/TV request into structured discover filters.",
+          "Return strict JSON. Omit fields you cannot infer:",
+          `{
+  "kind": "movie" | "tv",
+  "genres": string[],
+  "yearFrom": number,
+  "yearTo": number,
+  "minRating": number,
+  "language": string,
+  "keywords": string[],
+  "withCast": string[],
+  "sort": "popularity" | "vote_average" | "release_date" | "revenue",
+  "explanation": string
+}`,
+          `User query: """${query}"""`,
+        ].join("\n") },
+      ], { temperature: 0.3, jsonMode: true, maxTokens: 600 });
+      return mockResponse(aiParseJsonLoose(out, {}));
+    } catch (e) {
+      return mockResponse({ message: "AI semantic search failed" }, 502);
+    }
+  }
+
+  if (url.pathname === "/api/ai/translate-vtt") {
+    const vtt = body.vtt as string | undefined;
+    const targetLanguage = (body.targetLanguage as string) || "Spanish";
+    if (!vtt) return mockResponse({ message: "Missing 'vtt'" }, 400);
+    try {
+      const out = await aiCallGemini([
+        { role: "system", content: "You are a professional subtitle translator. Translate ONLY the dialogue lines of WebVTT files into the target language. Preserve every cue identifier, timecode, and blank line exactly. Never add commentary or markdown fences. Return the entire translated VTT body." },
+        { role: "user", content: `Target language: ${targetLanguage}\n\nVTT:\n${vtt.slice(0, 24000)}` },
+      ], { temperature: 0.2, maxTokens: 6000 });
+      return mockResponse({ vtt: out, targetLanguage });
+    } catch (e) {
+      return mockResponse({ message: "AI translation failed" }, 502);
+    }
+  }
+
+  if (url.pathname === "/api/ai/explain") {
+    const title = body.title as string | undefined;
+    if (!title) return mockResponse({ message: "Missing 'title'" }, 400);
+    try {
+      const out = await aiCallGemini([
+        { role: "system", content: "You are a thoughtful film & TV critic. Write a brief deep-dive: themes, tone, why it works (or doesn't), and a spoiler-free recommendation. 3-5 short paragraphs. No headings, no markdown." },
+        { role: "user", content: `${(body.kind as string) === "series" ? "TV series" : "Movie"}: ${title}${body.year ? ` (${body.year})` : ""}\n\nOfficial overview:\n${body.overview || "(none)"}` },
+      ], { temperature: 0.6, maxTokens: 800 });
+      return mockResponse({ text: out });
+    } catch (e) {
+      return mockResponse({ message: "AI explain failed" }, 502);
+    }
+  }
+
+  if (url.pathname === "/api/ai/chat") {
+    const title = body.title as string | undefined;
+    const messages = (body.messages as AiChatMessage[]) || [];
+    if (!title || !Array.isArray(messages)) return mockResponse({ message: "Missing fields" }, 400);
+    try {
+      const out = await aiCallGemini([
+        { role: "system", content: `You are a friendly, knowledgeable film critic helping a viewer talk about "${title}"${body.year ? ` (${body.year})` : ""}. The official overview is: ${body.overview || "(none provided)"}. Be concise (2-4 sentences unless asked otherwise). If asked about plot details you don't know, say so. Avoid spoilers unless explicitly asked.` },
+        ...messages.slice(-14),
+      ], { temperature: 0.7, maxTokens: 700 });
+      return mockResponse({ text: out });
+    } catch (e) {
+      return mockResponse({ message: "AI chat failed" }, 502);
+    }
+  }
+
+  if (url.pathname === "/api/ai/summarize-reviews") {
+    const title = body.title as string | undefined;
+    const reviews = (body.reviews as Array<{ author?: string; content: string; rating?: number | null }>) || [];
+    if (!title || reviews.length === 0) return mockResponse({ message: "Missing fields" }, 400);
+    const trimmed = reviews.slice(0, 12).map((r, i) => `[${i + 1}]${r.rating ? ` (${r.rating}/10)` : ""} ${r.content.slice(0, 800)}`).join("\n\n");
+    try {
+      const out = await aiCallGemini([
+        { role: "system", content: "You output strict JSON only." },
+        { role: "user", content: `Title: ${title}\nReviews:\n${trimmed}\n\nReturn strict JSON: { "consensus": string, "pros": string[], "cons": string[] }\nEach list item is a short phrase (max ~12 words). 3-5 items per list.` },
+      ], { temperature: 0.4, jsonMode: true, maxTokens: 700 });
+      return mockResponse(aiParseJsonLoose(out, {}));
+    } catch (e) {
+      return mockResponse({ message: "AI summarize-reviews failed" }, 502);
+    }
+  }
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Watchlist & viewing progress (localStorage-backed)
 // ────────────────────────────────────────────────────────────────────────
 function handleWatchlist(url: URL, init: RequestInit | undefined, method: string): Response | null {
@@ -793,12 +1164,20 @@ async function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     });
   }
   if (url.pathname === "/api/ai/status") {
-    return mockResponse({ configured: false, model: null });
+    return mockResponse({
+      configured: !!GEMINI_API_KEY,
+      provider: GEMINI_API_KEY ? "gemini" : null,
+      model: GEMINI_API_KEY ? GEMINI_MODEL : null,
+    });
   }
 
-  // AI endpoints — disabled in static deploy (keys aren't safe in browser)
+  // AI endpoints — proxied to Gemini if a public Gemini key is baked in.
   if (url.pathname.startsWith("/api/ai/")) {
-    return mockResponse({ configured: false, message: "AI features available in full deployment" }, 503);
+    if (!GEMINI_API_KEY) {
+      return mockResponse({ configured: false, message: "AI features available in full deployment" }, 503);
+    }
+    const aiResp = await handleAiProxy(url, init, method);
+    if (aiResp) return aiResp;
   }
 
   // Auth
@@ -821,6 +1200,13 @@ async function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     const proxied = await handleOmdbProxy(url);
     if (proxied) return proxied;
     return mockResponse({ message: "OMDB_API_KEY not configured" }, 503);
+  }
+
+  // archive.org — public-domain feature films with real streamable URLs.
+  // No key needed; proxy directly from the browser.
+  if (url.pathname.startsWith("/api/archive/")) {
+    const proxied = await handleArchiveProxy(url);
+    if (proxied) return proxied;
   }
 
   // Legacy /api/content/* routes — forward to /api/tmdb/* when possible.

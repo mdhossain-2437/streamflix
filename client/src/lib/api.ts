@@ -296,6 +296,188 @@ export function usePerson(personId: number | string | undefined) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// archive.org hooks — public-domain feature films with real streamable URLs.
+// ────────────────────────────────────────────────────────────────────────
+
+export interface ArchiveItem {
+  id: string;            // "archive-<identifier>"
+  identifier: string;
+  type: "movie";
+  title: string;
+  description: string;
+  year: string;
+  durationMin: number | null;
+  rating: number | null;
+  genres: string[];
+  posterUrl: string;
+  backdropUrl: string | null;
+  thumbnailUrl: string;
+  source: "archive";
+  detailsUrl: string;
+}
+
+export interface ArchivePlayableSource {
+  url: string;
+  type: string;
+  label: string;
+  size: number | null;
+  duration: number | null;
+}
+
+export interface ArchiveItemDetail {
+  item: ArchiveItem;
+  sources: ArchivePlayableSource[];
+  subtitles: Array<{ url: string; label: string; srclang: string }>;
+  embedUrl: string;
+  licenseUrl: string | null;
+}
+
+export interface ArchiveListResponse {
+  items: ArchiveItem[];
+  numFound: number;
+}
+
+export function useArchiveFeatured(params: { limit?: number; page?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.page) qs.set("page", String(params.page));
+  return useQuery<ArchiveListResponse | null>({
+    queryKey: ["/api/archive/featured", params],
+    queryFn: () => jsonOrNull<ArchiveListResponse>(`/api/archive/featured?${qs.toString()}`),
+    staleTime: STALE_LONG,
+  });
+}
+
+export function useArchiveSearch(query: string, params: { limit?: number; page?: number } = {}) {
+  const qs = new URLSearchParams({ q: query });
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.page) qs.set("page", String(params.page));
+  return useQuery<ArchiveListResponse | null>({
+    queryKey: ["/api/archive/search", { query, ...params }],
+    queryFn: () =>
+      query.trim().length >= 2
+        ? jsonOrNull<ArchiveListResponse>(`/api/archive/search?${qs.toString()}`)
+        : Promise.resolve({ items: [], numFound: 0 }),
+    staleTime: STALE_SHORT,
+    enabled: query.trim().length >= 2,
+  });
+}
+
+export function useArchiveCollection(slug: string | undefined, params: { limit?: number; page?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.page) qs.set("page", String(params.page));
+  return useQuery<ArchiveListResponse | null>({
+    queryKey: [`/api/archive/collection/${slug}`, params],
+    queryFn: () => slug ? jsonOrNull<ArchiveListResponse>(`/api/archive/collection/${slug}?${qs.toString()}`) : Promise.resolve(null),
+    staleTime: STALE_LONG,
+    enabled: !!slug,
+  });
+}
+
+export function useArchiveItem(idOrIdentifier: string | undefined) {
+  const id = idOrIdentifier?.replace(/^archive-/, "");
+  return useQuery<ArchiveItemDetail | null>({
+    queryKey: [`/api/archive/item/${id}`],
+    queryFn: () => id ? jsonOrNull<ArchiveItemDetail>(`/api/archive/item/${id}`) : Promise.resolve(null),
+    staleTime: STALE_LONG,
+    enabled: !!id,
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// AI hooks (Gemini / OpenAI). Auto-disabled when no provider is configured.
+// ────────────────────────────────────────────────────────────────────────
+
+export interface AiStatus {
+  configured: boolean;
+  provider: "gemini" | "openai" | null;
+  model: string | null;
+}
+
+export function useAiStatus() {
+  return useQuery<AiStatus | null>({
+    queryKey: ["/api/ai/status"],
+    queryFn: () => jsonOrNull<AiStatus>("/api/ai/status"),
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+async function aiPost<T>(path: string, body: unknown): Promise<T | null> {
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 503) return null;
+  if (!res.ok) throw new Error(`${res.status}`);
+  return (await res.json()) as T;
+}
+
+export interface RecommendItem {
+  id: string;
+  reason: string;
+  score?: number;
+}
+
+export interface SemanticSearchResult {
+  kind?: "movie" | "tv";
+  genres?: string[];
+  yearFrom?: number;
+  yearTo?: number;
+  minRating?: number;
+  language?: string;
+  keywords?: string[];
+  withCast?: string[];
+  sort?: "popularity" | "vote_average" | "release_date" | "revenue";
+  explanation?: string;
+}
+
+export interface AiChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export async function aiRecommend(
+  history: Array<{ title: string; genres?: string[]; year?: string }>,
+  candidates: Array<{ id: string; title: string; genres?: string[]; overview?: string; year?: string }>,
+  limit = 12,
+): Promise<RecommendItem[]> {
+  const out = await aiPost<{ items: RecommendItem[] }>("/api/ai/recommend", { history, candidates, limit });
+  return out?.items || [];
+}
+
+export async function aiSemanticSearch(query: string): Promise<SemanticSearchResult | null> {
+  return aiPost<SemanticSearchResult>("/api/ai/semantic-search", { query });
+}
+
+export async function aiChat(
+  title: string,
+  year: string | number | null | undefined,
+  overview: string | undefined,
+  messages: AiChatMessage[],
+): Promise<string | null> {
+  const out = await aiPost<{ text: string }>("/api/ai/chat", { title, year, overview, messages });
+  return out?.text || null;
+}
+
+export async function aiExplain(
+  title: string,
+  year: string | number | null | undefined,
+  overview: string | undefined,
+  kind: "movie" | "series" = "movie",
+): Promise<string | null> {
+  const out = await aiPost<{ text: string }>("/api/ai/explain", { title, year, overview, kind });
+  return out?.text || null;
+}
+
+export async function aiTranslateVtt(vtt: string, targetLanguage: string): Promise<string | null> {
+  const out = await aiPost<{ vtt: string; targetLanguage: string }>("/api/ai/translate-vtt", { vtt, targetLanguage });
+  return out?.vtt || null;
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Helpers used by pages.
 // ────────────────────────────────────────────────────────────────────────
 

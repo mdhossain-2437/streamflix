@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { ContentCard, ContentCardSkeleton } from "@/components/ContentCard";
 import { Footer } from "@/components/Footer";
-import { FilterBar, DEFAULT_FILTERS, type FilterState } from "@/components/FilterBar";
+import { FilterBar, DEFAULT_FILTERS, decadeRange, type FilterState } from "@/components/FilterBar";
 import { useDiscover } from "@/lib/api";
 import { tmdbToContent } from "@/lib/tmdbAdapter";
 import type { CatalogItem } from "@/lib/api";
@@ -17,18 +17,23 @@ export default function Series() {
   const [allResults, setAllResults] = useState<CatalogItem[]>([]);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const params = useMemo(
-    () => ({
+  const params = useMemo(() => {
+    const range = filters.decade ? decadeRange(filters.decade) : {};
+    return {
       kind: "tv",
       sort: filters.sort,
       genre: filters.genres.length > 0 ? filters.genres.join(",") : undefined,
-      year: filters.year || undefined,
+      year: filters.decade ? undefined : filters.year || undefined,
+      fromDate: range.from,
+      toDate: range.to,
       lang: filters.language || undefined,
+      country: filters.country || undefined,
+      certification: filters.certification || undefined,
+      keyword: filters.keywords.trim() || undefined,
       minRating: filters.minRating > 0 ? String(filters.minRating * 2) : undefined,
       page,
-    }),
-    [filters, page],
-  );
+    };
+  }, [filters, page]);
 
   const { data, isLoading, isFetching } = useDiscover(params);
 

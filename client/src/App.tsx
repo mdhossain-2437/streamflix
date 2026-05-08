@@ -20,6 +20,8 @@ const Search = lazy(() => import("@/pages/Search"));
 const Watchlist = lazy(() => import("@/pages/Watchlist"));
 const Profile = lazy(() => import("@/pages/Profile"));
 const Person = lazy(() => import("@/pages/Person"));
+const Free = lazy(() => import("@/pages/Free"));
+const Collections = lazy(() => import("@/pages/Collections"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function Router() {
@@ -41,6 +43,10 @@ function Router() {
           <Route path="/watchlist" component={Watchlist} />
           <Route path="/profile" component={Profile} />
           <Route path="/person/:id" component={Person} />
+          <Route path="/free" component={Free} />
+          <Route path="/free/:id" component={Watch} />
+          <Route path="/collections" component={Collections} />
+          <Route path="/collection/:id" component={Collections} />
         </>
       )}
       <Route component={NotFound} />

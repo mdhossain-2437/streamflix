@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { ContentCard } from "@/components/ContentCard";
 import { Footer } from "@/components/Footer";
+import { AiInsightPanel } from "@/components/AiInsightPanel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -384,6 +385,14 @@ export default function ContentDetail() {
 
           {/* Overview */}
           <TabsContent value="overview" className="space-y-10 mt-8">
+            <AiInsightPanel
+              title={content.title}
+              type={content.type}
+              year={content.year}
+              overview={content.description}
+              genres={content.genres}
+            />
+
             {content.cast.length > 0 && (
               <div className="space-y-4">
                 <h2 className="text-lg md:text-xl font-semibold tracking-tight">Top Cast</h2>

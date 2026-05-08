@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Info, Plus, VolumeX, Sparkles } from "lucide-react";
 import { Link } from "wouter";
@@ -15,8 +15,12 @@ import {
   useTopRated,
   useUpcoming,
   useOnTheAir,
+  useArchiveFeatured,
+  useAiStatus,
+  type CatalogItem,
 } from "@/lib/api";
-import { tmdbToContent } from "@/lib/tmdbAdapter";
+import { tmdbToContent, archiveToContent } from "@/lib/tmdbAdapter";
+import { hybridRecommend } from "@/lib/recommend";
 import type { Content, ViewingProgress } from "@shared/schema";
 
 export default function Home() {
@@ -49,6 +53,8 @@ export default function Home() {
   const { data: topSeriesData } = useTopRated({ kind: "tv" });
   const { data: upcomingData } = useUpcoming();
   const { data: onTheAirData } = useOnTheAir();
+  const { data: archiveData } = useArchiveFeatured({ limit: 18 });
+  const { data: aiStatus } = useAiStatus();
 
   const trending: Content[] = (trendingData?.results || []).slice(0, 10).map(tmdbToContent);
   const movies: Content[] = (popularMoviesData?.results || []).slice(0, 20).map(tmdbToContent);
@@ -75,6 +81,58 @@ export default function Home() {
     },
     {} as Record<string, ViewingProgress>,
   );
+
+  const freeContent: Content[] = (archiveData?.items || []).map(archiveToContent);
+
+  // Build a hybrid recommendation row from continue-watching + popular pool.
+  // Local genre/popularity rank runs immediately; AI re-ranking kicks in
+  // asynchronously when Gemini/OpenAI is configured.
+  const candidates: CatalogItem[] = useMemo(() => {
+    const all = [
+      ...(popularMoviesData?.results || []),
+      ...(popularSeriesData?.results || []),
+      ...(topMoviesData?.results || []),
+      ...(topSeriesData?.results || []),
+      ...(trendingData?.results || []),
+    ];
+    const seen = new Set<string>();
+    return all.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
+  }, [popularMoviesData, popularSeriesData, topMoviesData, topSeriesData, trendingData]);
+
+  const historySeed = useMemo(
+    () =>
+      continueWatching.map((cw) => ({
+        id: cw.content.id,
+        title: cw.content.title,
+        genres: (cw.content.genres as string[] | null) || undefined,
+        year: cw.content.releaseYear ? String(cw.content.releaseYear) : undefined,
+      })),
+    [continueWatching],
+  );
+
+  const [forYou, setForYou] = useState<Content[]>([]);
+  const [forYouReasons, setForYouReasons] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (candidates.length === 0) return;
+    let cancelled = false;
+    hybridRecommend(candidates, historySeed, {
+      limit: 18,
+      useAi: !!aiStatus?.configured,
+    }).then((ranked) => {
+      if (cancelled) return;
+      setForYou(ranked.map((r) => tmdbToContent(r.item)));
+      const r: Record<string, string> = {};
+      for (const x of ranked) {
+        if (x.reason) r[x.item.id] = x.reason;
+      }
+      setForYouReasons(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidates, historySeed, aiStatus?.configured]);
+  void forYouReasons;
 
   if (isLoading) {
     return (
@@ -243,6 +301,27 @@ export default function Home() {
           isLoading={trendingLoading}
           skeletonCount={10}
         />
+
+        {forYou.length > 0 && (
+          <ContentRow
+            title={aiStatus?.configured ? "Picked for You by AI" : "Recommended for You"}
+            subtitle={
+              aiStatus?.configured
+                ? "Re-ranked by Gemini based on your watch history"
+                : "Based on what's popular in your favorite genres"
+            }
+            contents={forYou}
+          />
+        )}
+
+        {freeContent.length > 0 && (
+          <ContentRow
+            title="Free to Watch — Public Domain"
+            subtitle="Classic films from the Internet Archive — no subscription, no DRM"
+            contents={freeContent}
+            seeAllLink="/free"
+          />
+        )}
 
         <ContentRow
           title="Popular Movies"
