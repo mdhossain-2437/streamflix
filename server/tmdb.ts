@@ -375,8 +375,13 @@ export function registerTmdbRoutes(app: Express): void {
         with_cast: req.query.cast as string | undefined,
         with_crew: req.query.crew as string | undefined,
         with_companies: req.query.company as string | undefined,
+        with_networks: req.query.network as string | undefined,
         with_original_language: req.query.lang as string | undefined,
         region: req.query.region as string | undefined,
+        with_origin_country: req.query.country as string | undefined,
+        certification_country: (req.query.certCountry as string | undefined) ||
+          ((req.query.certification as string | undefined) ? "US" : undefined),
+        certification: req.query.certification as string | undefined,
         "vote_average.gte": req.query.minRating as string | undefined,
         "vote_count.gte": req.query.minVotes as string | undefined,
         "with_runtime.gte": req.query.minRuntime as string | undefined,
@@ -752,6 +757,31 @@ export function registerTmdbRoutes(app: Express): void {
       });
     } catch (e) {
       console.error("[tmdb] person", e);
+      res.status(502).json({ message: "TMDB upstream failed" });
+    }
+  });
+
+  app.get("/api/tmdb/collection/:id", async (req, res) => {
+    try {
+      const data = await tmdbFetch<{
+        id: number;
+        name: string;
+        overview: string;
+        backdrop_path: string | null;
+        poster_path: string | null;
+        parts: Array<{
+          id: number;
+          title: string;
+          overview: string;
+          poster_path: string | null;
+          backdrop_path: string | null;
+          release_date: string;
+          vote_average: number;
+        }>;
+      }>(`/collection/${req.params.id}`, {});
+      res.json(data);
+    } catch (e) {
+      console.error("[tmdb] collection", e);
       res.status(502).json({ message: "TMDB upstream failed" });
     }
   });

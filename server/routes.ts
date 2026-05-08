@@ -4,7 +4,8 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./auth";
 import { registerTmdbRoutes } from "./tmdb";
 import { registerOmdbRoutes } from "./omdb";
-import { registerOpenAiRoutes } from "./openai";
+import { registerAiRoutes } from "./ai";
+import { registerArchiveRoutes } from "./archive";
 import {
   insertContentSchema,
   insertWatchlistSchema,
@@ -21,7 +22,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // the client can render disabled placeholders or fall back to mock data.
   registerTmdbRoutes(app);
   registerOmdbRoutes(app);
-  registerOpenAiRoutes(app);
+  registerAiRoutes(app);
+  registerArchiveRoutes(app);
 
   // Auth routes
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
