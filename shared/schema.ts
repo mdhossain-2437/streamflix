@@ -8,32 +8,74 @@ import {
   index,
   jsonb,
   boolean,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import type { AdapterAccount } from "next-auth/adapters";
 
-// Session storage table (required for Replit Auth)
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)]
-);
-
-// User storage table (required for Replit Auth)
+// User storage table (NextAuth.js compatible + role for admin gating)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name"),
   email: varchar("email").unique(),
+  emailVerified: timestamp("email_verified"),
+  image: varchar("image"),
+  passwordHash: text("password_hash"),
+  role: varchar("role", { length: 16 }).notNull().default("user"),
+  // Legacy / compatibility fields (Replit Auth era)
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// NextAuth.js account table (for OAuth providers)
+export const accounts = pgTable(
+  "accounts",
+  {
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: varchar("type").notNull().$type<AdapterAccount["type"]>(),
+    provider: varchar("provider").notNull(),
+    providerAccountId: varchar("provider_account_id").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: varchar("token_type"),
+    scope: varchar("scope"),
+    id_token: text("id_token"),
+    session_state: varchar("session_state"),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.provider, table.providerAccountId] }),
+  }),
+);
+
+// NextAuth.js session table
+export const sessions = pgTable("sessions", {
+  sessionToken: varchar("session_token").primaryKey(),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires").notNull(),
+});
+
+// NextAuth.js verification token table (magic-link / email)
+export const verificationTokens = pgTable(
+  "verification_tokens",
+  {
+    identifier: varchar("identifier").notNull(),
+    token: varchar("token").notNull(),
+    expires: timestamp("expires").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.identifier, table.token] }),
+  }),
+);
 
 // Content table (movies and series)
 export const content = pgTable("content", {
@@ -53,6 +95,11 @@ export const content = pgTable("content", {
   cast: jsonb("cast").$type<{ name: string; role: string; imageUrl: string }[]>(),
   featured: boolean("featured").default(false),
   trending: boolean("trending").default(false),
+  // Legitimacy / source tracking — every row must declare where it came from
+  source: varchar("source", { length: 24 }).default("manual"),
+  // "manual" | "internet_archive" | "creative_commons" | "tmdb" | "user_upload"
+  sourceId: varchar("source_id", { length: 128 }),
+  license: varchar("license", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -152,8 +199,8 @@ export const insertViewingProgressSchema = createInsertSchema(viewingProgress).o
 });
 
 // Types
-export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type UpsertUser = typeof users.$inferInsert;
 export type Content = typeof content.$inferSelect;
 export type InsertContent = z.infer<typeof insertContentSchema>;
 export type Episode = typeof episodes.$inferSelect;

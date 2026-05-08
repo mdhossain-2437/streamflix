@@ -1,13 +1,8 @@
 node_modules
+.next
 dist
 .DS_Store
-server/public
-vite.config.ts.*
 *.tar.gz
-
-# Demo-only files (used to deploy the static frontend preview, not part of the app)
-client/demo.html
-client/src/demoMain.tsx
-client/src/demoMock.ts
-client/src/demoData.ts
-vite.demo.config.ts
+.env
+.env.local
+.env.production
