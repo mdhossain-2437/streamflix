@@ -350,4 +350,77 @@ export function registerArchiveRoutes(app: Express): void {
       res.status(502).json({ message: "archive.org unavailable" });
     }
   });
+
+  // Streaming proxy used by the client downloader. Many archive.org CDN
+  // mirrors strip the access-control-allow-origin header on redirects, which
+  // breaks browser fetch(). The browser hits this proxy instead, the server
+  // follows redirects with full network access, and we re-stream the bytes
+  // back with permissive CORS headers and an Range support.
+  app.get("/api/proxy/download", async (req: Request, res: Response) => {
+    const target = String(req.query.url || "");
+    if (!/^https?:\/\//i.test(target)) {
+      return res.status(400).json({ message: "Invalid url" });
+    }
+    let host: string;
+    try {
+      host = new URL(target).hostname.toLowerCase();
+    } catch {
+      return res.status(400).json({ message: "Invalid url" });
+    }
+    // Allow-list: only proxy from public-domain / open archives. We don't
+    // want this to become an open relay.
+    const allowed =
+      /(^|\.)archive\.org$/.test(host) ||
+      /(^|\.)us\.archive\.org$/.test(host) ||
+      /(^|\.)ca\.archive\.org$/.test(host) ||
+      /\.archive\.org$/.test(host);
+    if (!allowed) {
+      return res.status(403).json({ message: "Host not allowed" });
+    }
+    try {
+      const upstream = await fetch(target, {
+        redirect: "follow",
+        headers: req.headers.range ? { range: String(req.headers.range) } : {},
+      });
+      res.status(upstream.status);
+      res.setHeader("access-control-allow-origin", "*");
+      const passthrough = [
+        "content-type",
+        "content-length",
+        "accept-ranges",
+        "content-range",
+        "last-modified",
+        "etag",
+      ];
+      for (const h of passthrough) {
+        const v = upstream.headers.get(h);
+        if (v) res.setHeader(h, v);
+      }
+      if (!upstream.body) {
+        res.end();
+        return;
+      }
+      const reader = upstream.body.getReader();
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (!res.write(Buffer.from(value))) {
+              await new Promise<void>((resolve) => res.once("drain", resolve));
+            }
+          }
+          res.end();
+        } catch (err) {
+          console.error("[archive] proxy pump", err);
+          if (!res.headersSent) res.status(502);
+          res.end();
+        }
+      };
+      pump();
+    } catch (e) {
+      console.error("[archive] proxy", e);
+      res.status(502).json({ message: "Proxy failed" });
+    }
+  });
 }

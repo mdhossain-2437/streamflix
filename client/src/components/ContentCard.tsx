@@ -101,7 +101,10 @@ export function ContentCard({
 
       <motion.div
         className="group relative cursor-pointer perspective-1000"
-        onClick={() => setLocation(`/${content.type}/${content.id}`)}
+        onClick={() => {
+          const isArchive = typeof content.id === "string" && content.id.startsWith("archive-");
+          setLocation(isArchive ? `/free/${content.id}` : `/${content.type}/${content.id}`);
+        }}
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
         whileHover={{ y: -6, scale: 1.04 }}
@@ -163,7 +166,8 @@ export function ContentCard({
                       className="h-9 w-9 rounded-full bg-white text-black hover:bg-white/90 hover:scale-105 transition-transform"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setLocation(`/watch/${content.id}`);
+                        const isArchive = typeof content.id === "string" && content.id.startsWith("archive-");
+                        setLocation(isArchive ? `/free/${content.id}` : `/watch/${content.id}`);
                       }}
                       data-testid={`button-play-${content.id}`}
                     >
@@ -203,7 +207,8 @@ export function ContentCard({
                         className="h-9 w-9 rounded-full border border-white/40 bg-black/40 hover:bg-black/60 hover:border-white"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setLocation(`/${content.type}/${content.id}`);
+                          const isArchive = typeof content.id === "string" && content.id.startsWith("archive-");
+                          setLocation(isArchive ? `/free/${content.id}` : `/${content.type}/${content.id}`);
                         }}
                         data-testid={`button-info-${content.id}`}
                       >
